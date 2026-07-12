@@ -1,0 +1,17 @@
+SUPPLIER EVALUATION REPORT
+
+PT ABC
+
+Delivery Score: 95
+Quality Score: 90
+
+Status:
+Best Supplier 2025
+
+PT XYZ
+
+Delivery Score: 70
+Quality Score: 75
+
+Status:
+High Risk Supplier

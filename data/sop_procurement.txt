@@ -1,0 +1,19 @@
+SOP PROCUREMENT
+
+Batas approval procurement:
+
+- Dibawah Rp10.000.000 : Supervisor
+- Rp10.000.000 sampai Rp50.000.000 : Manager
+- Diatas Rp50.000.000 : Direktur
+
+Penalti supplier:
+
+Keterlambatan lebih dari 30 hari dikenakan penalti 10% dari nilai kontrak.
+
+Proses procurement:
+
+1. Permintaan pembelian
+2. Evaluasi vendor
+3. Approval
+4. Purchase Order
+5. Pengiriman

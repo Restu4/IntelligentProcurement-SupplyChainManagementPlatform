@@ -1,0 +1,94 @@
+# === ENV & SECRETS ===
+.env
+.env.local
+.env.production
+*.env
+
+# === DATABASE ===
+*.db
+*.sqlite
+*.sqlite3
+
+# === PYTHON ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+env/
+
+# === CHROMADB & VECTOR DB ===
+vectordb/
+
+# === UPLOADS ===
+uploads/
+
+# === NODE ===
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+frontend/next
+frontend/smartprocure-ai@1.0.0
+
+# === FLUTTER ===
+mobile/.dart_tool/
+mobile/.packages
+mobile/.pub/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/pubspec.lock
+mobile/web/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/ios/
+mobile/linux/
+mobile/macos/
+mobile/windows/
+mobile/.metadata
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === BUILD ARTIFACTS ===
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# === PYTHON INSTALLATION (root level) ===
+python.exe
+pythonw.exe
+python3.dll
+python313.dll
+vcruntime140.dll
+vcruntime140_1.dll
+LICENSE.txt
+NEWS.txt
+DLLs/
+include/
+Lib/
+libs/
+Scripts/
+share/
+static/
+templates/
+
+# === MISC ===
+nul
+smartprocure.db
+server.log
+package-lock.json

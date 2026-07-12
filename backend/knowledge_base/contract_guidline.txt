@@ -1,0 +1,11 @@
+SUPPLIER CONTRACT GUIDELINE
+
+Payment Term:
+
+Net 30 Days
+
+Supplier wajib mengirim barang sesuai SLA.
+
+SLA standar:
+
+Pengiriman maksimal 14 hari kerja.
