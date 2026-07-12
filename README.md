@@ -20,14 +20,27 @@ An enterprise-grade AI-powered procurement platform built with **Retrieval-Augme
 
 ## Key Highlights
 
-| Feature | Description |
-|:--------|:------------|
-| **RAG-Powered Chat** | Natural language Q&A over procurement documents with source citations and confidence scoring |
-| **Document Intelligence** | Automatic text extraction, chunking, and vector embedding for PDF, DOCX, and TXT files |
-| **Supplier Risk Management** | AI-driven risk classification with performance scoring and real-time monitoring |
-| **Price Forecasting** | Linear regression-based price prediction with smart buy recommendations |
-| **Budget Tracking** | Department-wise allocation monitoring with utilization dashboards |
-| **Cross-Platform** | Web frontend (Next.js) + Mobile app (Flutter) with shared REST API |
+### Web Dashboard (Next.js)
+- **RAG-Powered Chat** — Natural language Q&A over procurement documents with source citations and confidence scoring
+- **Document Intelligence** — Upload PDF/DOCX/TXT with automatic text extraction, chunking, and vector embedding
+- **Supplier Risk Management** — AI-driven risk classification with performance scoring and real-time monitoring
+- **Price Forecasting** — Linear regression-based price prediction with smart buy recommendations
+- **Budget Tracking** — Department-wise allocation monitoring with utilization dashboards and bar charts
+- **Purchase Orders** — Create, track, and manage POs with status workflow
+
+### Mobile App (Flutter)
+- **Cross-Platform** — Runs on Android, iOS, and Web (Chrome)
+- **Dark Theme UI** — Material 3 design with teal/blue accent palette
+- **AI Chat** — Confidence badges (green/yellow/red), expandable source citations, typing indicators
+- **Supplier Search & Filter** — Real-time search, status/risk filter dropdowns, summary cards
+- **Global Search** — Search across suppliers, POs, documents, forecasts from the dashboard
+- **Push-Style Notifications** — Clickable notification items that navigate to relevant pages
+
+### Backend API (FastAPI)
+- **15 REST Endpoints** — Auth, Chat, Documents, Suppliers, Forecast, Health
+- **JWT Authentication** — Secure token-based auth with bcrypt password hashing
+- **RAG Pipeline** — Sentence Transformers embeddings + ChromaDB vector search + Gemini LLM
+- **9 Database Tables** — Users, Suppliers, Budgets, Documents, Chat History, Forecasts, POs
 
 ---
 
@@ -189,10 +202,19 @@ flutter run                      # Run on connected device/emulator
 
 ### Demo Credentials
 
-| Role | Username | Password |
-|:-----|:---------|:---------|
-| Admin | `admin` | `admin123` |
-| Viewer | `viewer` | `viewer123` |
+| Role | Username | Email | Password | Access Level |
+|:-----|:---------|:------|:---------|:-------------|
+| **Admin** | `admin` | `admin@smartprocure.ai` | `admin123` | Full access — Dashboard, Chat, Upload, Suppliers, Budget, Forecast, Settings |
+| **Viewer** | `viewer` | `viewer@smartprocure.ai` | `viewer123` | Read-only — Dashboard view, Chat, Supplier list |
+
+> Both accounts work on **Web Dashboard** (`http://localhost:3000`), **Mobile App** (Flutter), and **API** (`http://localhost:8000/docs`).
+
+### Demo Accounts Overview
+
+| Account | Web Dashboard Features | Mobile Features |
+|:--------|:----------------------|:----------------|
+| **Admin** | Full dashboard analytics, AI chat with RAG, document upload & management, supplier risk assessment, budget tracker, price forecast, purchase orders, settings & profile management | Dashboard, AI Chat, Upload documents, Supplier risk list with search/filter, Budget overview, Settings with notification toggles |
+| **Viewer** | View dashboard analytics, AI chat queries, browse suppliers, view budget overview | Dashboard, AI Chat, Supplier list |
 
 ---
 
