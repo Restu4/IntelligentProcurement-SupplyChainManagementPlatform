@@ -5,6 +5,20 @@
 
 **Authentication:** Bearer Token (JWT)
 
+**Pagination:** list endpoints accept `limit` (1–200, default 50) and `offset`
+(default 0). `/api/purchase-orders` and `/api/budgets` return a page envelope:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+Other list endpoints return a plain array of items.
+
 ---
 
 ## 1. Authentication
@@ -31,14 +45,17 @@ Authenticate and receive JWT token.
 ### POST /api/register
 Create a new user account.
 
+> **Security note:** `role` is not accepted from this endpoint. Every public
+> registration is created as `viewer`; an administrator must promote the
+> account directly in the database.
+
 **Request:**
 ```json
 {
   "username": "procurement_manager",
   "email": "manager@company.com",
   "password": "securepass123",
-  "full_name": "Restu Mahi",
-  "role": "manager"
+  "full_name": "Restu Mahi"
 }
 ```
 
@@ -49,7 +66,7 @@ Create a new user account.
   "username": "procurement_manager",
   "email": "manager@company.com",
   "full_name": "Restu Mahi",
-  "role": "manager",
+  "role": "viewer",
   "is_active": true
 }
 ```
@@ -87,12 +104,17 @@ Ask a question to SmartProcure AI.
       "score": 0.9231
     }
   ],
-  "confidence": 92.31
+  "confidence": 92.31,
+  "degraded": false
 }
 ```
 
-### GET /api/history?limit=20
-Get chat history for current user.
+`degraded` is `true` when Gemini is unavailable and the answer is an extractive
+fallback built from the retrieved chunks. When `false`, the text came from the
+LLM.
+
+### GET /api/history?limit=20&offset=0
+Get chat history for current user, newest first.
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -101,7 +123,9 @@ Get chat history for current user.
 ## 3. Document Management
 
 ### POST /api/upload
-Upload a document (PDF, DOCX, TXT).
+Upload a document (PDF, DOCX, TXT, MD).
+
+> **Admin only.** Viewers receive `403 Forbidden`.
 
 **Headers:** `Authorization: Bearer <token>`
 **Content-Type:** `multipart/form-data`
@@ -125,8 +149,8 @@ Upload a document (PDF, DOCX, TXT).
 }
 ```
 
-### GET /api/documents
-List all uploaded documents.
+### GET /api/documents?limit=50&offset=0
+List uploaded documents, newest first.
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -136,7 +160,9 @@ Get document details.
 **Headers:** `Authorization: Bearer <token>`
 
 ### DELETE /api/documents/{id}
-Delete document and its vectors.
+Delete the document and its vectors (and the stored file).
+
+> **Admin only.**
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -150,17 +176,20 @@ List suppliers with optional filters.
 **Headers:** `Authorization: Bearer <token>`
 
 **Query Parameters:**
-| Parameter | Type |
-|-----------|------|
-| status | String |
-| risk_level | String |
-| category | String |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| status | String | `active`, `inactive`, `blacklisted` |
+| risk_level | String | `low`, `medium`, `high` |
+| category | String | Supplier category |
+| q | String | Case-insensitive name search |
+| limit | Integer | 1–200 (default 50) |
+| offset | Integer | ≥ 0 (default 0) |
 
 ### GET /api/suppliers/{id}
 Get supplier details.
 
 ### POST /api/suppliers
-Create a new supplier.
+Create a new supplier. **Admin only.**
 
 **Request:**
 ```json
@@ -174,7 +203,7 @@ Create a new supplier.
 ```
 
 ### GET /api/suppliers/{id}/risk
-AI-powered risk assessment for a supplier.
+Rule-based risk assessment for a supplier.
 
 **Response:**
 ```json
@@ -189,7 +218,187 @@ AI-powered risk assessment for a supplier.
 
 ---
 
-## 5. Forecasting
+## 5. Purchase Orders
+
+Approval levels come from `data/02_PRC-POG-002_PO_Guidelines.md` and are
+assigned by the backend from the amount:
+
+| Amount (IDR) | Approval level |
+|:-------------|:---------------|
+| ≤ 25,000,000 | Procurement Manager |
+| ≤ 150,000,000 | Senior Procurement Manager |
+| ≤ 750,000,000 | Procurement Director |
+| > 750,000,000 | CFO + Procurement Director |
+
+Allowed status transitions:
+
+```
+draft ──▶ pending ──▶ approved ──▶ completed
+  │  ▲        │
+  │  └── rejected ◀──┘
+  │
+  └──▶ cancelled   (also reachable from pending and approved)
+```
+
+`completed` and `cancelled` are terminal; `rejected` can be reopened as `draft`.
+
+### GET /api/purchase-orders
+Paginated PO list.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| status | String | Filter by workflow status |
+| supplier_id | Integer | Filter by supplier |
+| q | String | Search PO number, description, or supplier name |
+| limit | Integer | 1–200 (default 50) |
+| offset | Integer | ≥ 0 (default 0) |
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "po_number": "PO-2026-0001",
+      "supplier_id": 1,
+      "supplier_name": "PT Sukses Makmur Sentosa",
+      "user_id": 1,
+      "description": "Raw material Q1",
+      "amount": 320000000,
+      "status": "approved",
+      "approval_level": "Procurement Director",
+      "notes": null,
+      "created_at": "2026-01-10T09:30:00Z",
+      "updated_at": "2026-01-10T09:30:00Z"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+### GET /api/purchase-orders/{id}
+Get a single purchase order.
+
+### POST /api/purchase-orders
+Create a purchase order. **Admin only.**
+
+`po_number` is optional; when omitted the backend generates the next
+`PO-<year>-<sequence>` value. Creating a PO directly as `approved` or `completed`
+is rejected — use the workflow.
+
+**Request:**
+```json
+{
+  "supplier_id": 1,
+  "description": "Raw material Q1",
+  "amount": 320000000,
+  "notes": "Urgent",
+  "status": "draft"
+}
+```
+
+Errors: `404` unknown supplier, `400` blacklisted supplier or invalid initial
+status, `409` duplicate PO number.
+
+### PATCH /api/purchase-orders/{id}
+Update fields and/or advance the status. **Admin only.**
+
+```json
+{ "status": "pending" }
+```
+
+Rules:
+- Illegal transitions return `409`.
+- Changing `amount` on an approved/completed PO by more than 10% resets the
+  status to `pending` and recomputes the approval level.
+
+### DELETE /api/purchase-orders/{id}
+Delete a PO. **Admin only.** `approved` and `completed` POs cannot be deleted
+(`409`) — cancel them instead.
+
+---
+
+## 6. Budgets
+
+### GET /api/budgets
+Paginated budget list.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:** `fiscal_year`, `department` (partial match), `limit`,
+`offset`.
+
+**Response (200):**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "department": "IT Infrastructure",
+      "fiscal_year": 2025,
+      "total_budget": 25000000000,
+      "allocated": 18500000000,
+      "remaining": 6500000000,
+      "utilization": 74.0,
+      "created_at": "2026-01-10T09:30:00Z",
+      "updated_at": "2026-01-10T09:30:00Z"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+`remaining` and `utilization` (percentage) are computed by the server.
+
+### GET /api/budgets/summary?fiscal_year=2025
+Aggregate totals for a fiscal year (defaults to the current UTC year).
+
+```json
+{
+  "fiscal_year": 2025,
+  "departments": 5,
+  "total_budget": 115000000000,
+  "allocated": 91500000000,
+  "remaining": 23500000000,
+  "utilization": 79.57
+}
+```
+
+### GET /api/budgets/{id}
+Get a single budget.
+
+### POST /api/budgets
+Create a budget. **Admin only.**
+
+```json
+{
+  "department": "IT Infrastructure",
+  "fiscal_year": 2025,
+  "total_budget": 25000000000,
+  "allocated": 18500000000
+}
+```
+
+`(department, fiscal_year)` is unique (case-insensitive check) and returns `409`
+on duplicates. `allocated` may not exceed `total_budget`.
+
+### PATCH /api/budgets/{id}
+Update a budget. **Admin only.** Remaining/utilization are recomputed; allocated
+above total is rejected with `400`.
+
+### DELETE /api/budgets/{id}
+Delete a budget. **Admin only.**
+
+---
+
+## 7. Forecasting
 
 ### POST /api/forecast
 Run an AI forecast.
@@ -246,8 +455,8 @@ Run an AI forecast.
 }
 ```
 
-### GET /api/forecast?limit=20
-Get forecast history.
+### GET /api/forecast?limit=20&offset=0
+Get forecast history, newest first. Optional `supplier_id` filter.
 
 ### GET /api/forecast/smart-buy
 Get AI-powered supplier recommendation.
@@ -267,7 +476,7 @@ Get AI-powered supplier recommendation.
 
 ---
 
-## 6. Health
+## 8. Health
 
 ### GET /api/health
 System health check.
@@ -285,7 +494,7 @@ System health check.
 
 ---
 
-## 7. Error Responses
+## 9. Error Responses
 
 ### 401 Unauthorized
 ```json
@@ -302,15 +511,26 @@ System health check.
 ```
 
 ### 500 Internal Server Error
+Internal details are logged, never returned to the client:
+
 ```json
 {
-  "detail": "Chat processing failed: <error message>"
+  "detail": "The AI assistant is temporarily unavailable. Please try again."
+}
+```
+
+### 409 Conflict
+Used for duplicate resources and illegal state transitions:
+
+```json
+{
+  "detail": "Cannot move a purchase order from 'draft' to 'approved'"
 }
 ```
 
 ---
 
-## 8. Swagger UI
+## 10. Swagger UI
 
 Interactive API documentation available at:
 - Swagger UI: `http://localhost:8000/docs`
