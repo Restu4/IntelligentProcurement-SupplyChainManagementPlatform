@@ -3,6 +3,7 @@
 .env.local
 .env.production
 *.env
+!.env.example
 
 # === DATABASE ===
 *.db
@@ -20,10 +21,18 @@ build/
 *.egg
 venv/
 .venv/
-env/
+
+# === TESTING / TOOLING CACHES ===
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # === CHROMADB & VECTOR DB ===
 vectordb/
+chroma/
 
 # === UPLOADS ===
 uploads/
@@ -33,8 +42,6 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
-frontend/next
-frontend/smartprocure-ai@1.0.0
 
 # === FLUTTER ===
 mobile/.dart_tool/
@@ -43,15 +50,10 @@ mobile/.pub/
 mobile/build/
 mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
-mobile/pubspec.lock
-mobile/web/
+# pubspec.lock is committed on purpose so mobile builds are reproducible.
 mobile/android/.gradle/
 mobile/android/app/build/
 mobile/android/build/
-mobile/ios/
-mobile/linux/
-mobile/macos/
-mobile/windows/
 mobile/.metadata
 
 # === IDE ===
@@ -63,32 +65,10 @@ mobile/.metadata
 .DS_Store
 Thumbs.db
 
-# === BUILD ARTIFACTS ===
+# === RUNTIME ARTIFACTS ===
 *.log
 *.pid
 *.seed
 *.pid.lock
-
-# === PYTHON INSTALLATION (root level) ===
-python.exe
-pythonw.exe
-python3.dll
-python313.dll
-vcruntime140.dll
-vcruntime140_1.dll
-LICENSE.txt
-NEWS.txt
-DLLs/
-include/
-Lib/
-libs/
-Scripts/
-share/
-static/
-templates/
-
-# === MISC ===
-nul
 smartprocure.db
 server.log
-package-lock.json
