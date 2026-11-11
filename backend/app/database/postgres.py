@@ -19,6 +19,15 @@ engine = create_async_engine(
     connect_args=connect_args,
 )
 
+if _is_sqlite:
+    # PRAGMAs must run on a fresh connection, outside any transaction.
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
@@ -43,14 +52,11 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
+    # Import every ORM model so Base.metadata knows about all tables
+    # (e.g. purchase_orders) before create_all runs.
+    import app.models  # noqa: F401
+
     async with engine.begin() as conn:
-        if _is_sqlite:
-            await conn.run_sync(
-                lambda sync_conn: event.listen(
-                    sync_conn.engine, "connect",
-                    lambda dbapi_con, con_record: dbapi_con.execute("PRAGMA journal_mode=WAL")
-                )
-            )
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables created successfully")
 

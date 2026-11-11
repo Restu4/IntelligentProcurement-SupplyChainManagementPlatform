@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,7 +17,14 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.hashed_password):
+    # bcrypt is CPU-bound; keep the event loop free.
+    password_ok = False
+    if user is not None:
+        password_ok = await asyncio.to_thread(
+            verify_password, body.password, user.hashed_password
+        )
+
+    if not user or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -45,9 +54,10 @@ async def register(body: UserCreate, db: AsyncSession = Depends(get_db)):
     user = User(
         username=body.username,
         email=body.email,
-        hashed_password=hash_password(body.password),
+        hashed_password=await asyncio.to_thread(hash_password, body.password),
         full_name=body.full_name,
-        role=body.role,
+        # Never trust a client-supplied role. Privilege escalation guard.
+        role="viewer",
     )
     db.add(user)
     await db.flush()

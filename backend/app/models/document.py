@@ -28,7 +28,9 @@ class DocumentChunk(Base, TimestampMixin):
     __tablename__ = "document_chunks"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    document_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.id"), nullable=False)
+    document_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=True)
@@ -43,8 +45,12 @@ class EmbeddingMetadata(Base, TimestampMixin):
     __tablename__ = "embedding_metadata"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    chunk_id: Mapped[int] = mapped_column(Integer, ForeignKey("document_chunks.id"), nullable=False)
-    document_id: Mapped[int] = mapped_column(Integer, ForeignKey("documents.id"), nullable=False)
+    chunk_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False
+    )
+    document_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     dimension: Mapped[int] = mapped_column(Integer, nullable=False)
     vector_id: Mapped[str] = mapped_column(String(255), nullable=True)

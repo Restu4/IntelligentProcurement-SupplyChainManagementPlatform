@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -48,16 +49,18 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
     try:
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
-        user_id = int(payload.get("sub"))
-        if user_id is None:
+        subject = payload.get("sub")
+        if subject is None:
             raise credentials_exception
-    except JWTError:
+        user_id = int(subject)
+    except (PyJWTError, TypeError, ValueError):
         raise credentials_exception
 
     result = await db.execute(select(User).where(User.id == user_id))
@@ -65,3 +68,20 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+def require_roles(*roles: str):
+    """Build a dependency that only lets the given roles through."""
+
+    async def role_checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this action",
+            )
+        return current_user
+
+    return role_checker
+
+
+require_admin = require_roles("admin")

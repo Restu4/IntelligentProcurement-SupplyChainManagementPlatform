@@ -14,12 +14,22 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting SmartProcure AI backend...")
+    logger.info(f"Starting SmartProcure AI backend ({settings.ENVIRONMENT})...")
+    settings.validate_runtime()
+
+    if settings.uses_insecure_jwt_secret:
+        logger.warning(
+            "JWT_SECRET_KEY is a default/insecure value. "
+            "Set a strong secret in .env before deploying."
+        )
+
     try:
         await init_db()
         logger.info("Database tables initialized")
     except Exception as e:
-        logger.warning(f"Database initialization skipped: {e}")
+        logger.error(f"Database initialization failed: {e}", exc_info=True)
+        raise
+
     yield
     await close_db()
     logger.info("SmartProcure AI backend shut down")
@@ -34,12 +44,18 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# A wildcard origin cannot be combined with credentials. The frontend uses
+# bearer tokens (not cookies), so credentials are only enabled for explicit
+# origins.
+_allowed_origins = settings.cors_origins
+_allow_all_origins = "*" in _allowed_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"] if _allow_all_origins else _allowed_origins,
+    allow_credentials=not _allow_all_origins,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    max_age=600,
 )
 
 

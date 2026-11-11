@@ -16,7 +16,8 @@ class UserCreate(BaseModel):
     email: str = Field(..., max_length=255)
     password: str = Field(..., min_length=6)
     full_name: str = Field(default="", max_length=255)
-    role: str = Field(default="viewer", max_length=50)
+    # Role is intentionally NOT accepted from public registration.
+    # New accounts always start as "viewer"; an admin must promote them.
 
 
 class UserResponse(BaseModel):
