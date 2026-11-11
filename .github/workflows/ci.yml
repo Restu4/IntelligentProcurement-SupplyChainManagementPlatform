@@ -31,6 +31,14 @@ jobs:
       - name: Byte-compile
         run: python -m compileall -q app main.py seed.py seed_knowledge_base.py
 
+      - name: Verify migrations
+        run: |
+          export DATABASE_URL=sqlite+aiosqlite:///./_ci_migration.db
+          python -m alembic upgrade head
+          python -m alembic check
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./_ci_migration.db
+
       - name: Run pytest
         run: python -m pytest -q
 
