@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from app.services.purchase_order_service import (
     create_with_unique_number,
 )
 from app.utils.auth import get_current_user, require_admin
+from app.utils.audit import record_audit
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -138,6 +139,7 @@ async def get_purchase_order(
 @router.post("/purchase-orders", response_model=PurchaseOrderResponse, status_code=201)
 async def create_purchase_order(
     body: PurchaseOrderCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -168,6 +170,21 @@ async def create_purchase_order(
         f"Created {po.po_number} for {supplier.name} "
         f"(Rp {po.amount:,.0f}, {po.approval_level})"
     )
+    await record_audit(
+        db,
+        user=current_user,
+        action="purchase_order.created",
+        entity_type="purchase_order",
+        entity_id=po.id,
+        detail={
+            "po_number": po.po_number,
+            "supplier_id": po.supplier_id,
+            "amount": po.amount,
+            "status": po.status,
+            "approval_level": po.approval_level,
+        },
+        request=request,
+    )
     return _to_response(po, supplier.name)
 
 
@@ -175,11 +192,13 @@ async def create_purchase_order(
 async def update_purchase_order(
     po_id: int,
     body: PurchaseOrderUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     po, supplier_name = await _get_po_or_404(db, po_id)
     changes = body.model_dump(exclude_unset=True)
+    previous_status = po.status
 
     if not changes:
         return _to_response(po, supplier_name)
@@ -221,12 +240,28 @@ async def update_purchase_order(
 
     await db.flush()
     await db.refresh(po)
+    await record_audit(
+        db,
+        user=current_user,
+        action="purchase_order.updated",
+        entity_type="purchase_order",
+        entity_id=po.id,
+        detail={
+            "po_number": po.po_number,
+            "fields": sorted(changes.keys()),
+            "status_before": previous_status,
+            "status_after": po.status,
+            "amount_after": po.amount,
+        },
+        request=request,
+    )
     return _to_response(po, supplier_name)
 
 
 @router.delete("/purchase-orders/{po_id}", status_code=204)
 async def delete_purchase_order(
     po_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -236,6 +271,16 @@ async def delete_purchase_order(
             status_code=409,
             detail="Approved or completed purchase orders cannot be deleted; cancel them instead",
         )
+    po_number = po.po_number
     await db.delete(po)
     await db.flush()
-    logger.info(f"Deleted purchase order {po.po_number}")
+    await record_audit(
+        db,
+        user=current_user,
+        action="purchase_order.deleted",
+        entity_type="purchase_order",
+        entity_id=po_id,
+        detail={"po_number": po_number},
+        request=request,
+    )
+    logger.info(f"Deleted purchase order {po_number}")

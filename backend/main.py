@@ -8,6 +8,7 @@ from app.api import routers
 from app.config.settings import settings
 from app.database.postgres import init_db, close_db
 from app.utils.logger import get_logger
+from app.utils.rate_limit import client_key, global_limiter
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,33 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Per-IP sliding window for the API surface.
+
+    Declared before CORSMiddleware so CORS wraps this response too, which lets
+    browsers read the 429 body and Retry-After header.
+    """
+    path = request.url.path
+    if (
+        settings.RATE_LIMIT_ENABLED
+        and path.startswith("/api")
+        and path != "/api/health"
+    ):
+        allowed, retry_after = global_limiter.hit(
+            client_key(request),
+            settings.RATE_LIMIT_REQUESTS,
+            settings.RATE_LIMIT_WINDOW_SECONDS,
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please slow down."},
+                headers={"Retry-After": str(max(1, int(retry_after + 0.999)))},
+            )
+    return await call_next(request)
+
 
 # A wildcard origin cannot be combined with credentials. The frontend uses
 # bearer tokens (not cookies), so credentials are only enabled for explicit

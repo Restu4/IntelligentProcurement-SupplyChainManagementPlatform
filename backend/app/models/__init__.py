@@ -5,6 +5,8 @@ from app.models.budget import Budget
 from app.models.document import Document, DocumentChunk, EmbeddingMetadata
 from app.models.forecast import ForecastHistory
 from app.models.chat import ChatHistory
+from app.models.refresh_token import RefreshToken
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -16,4 +18,6 @@ __all__ = [
     "EmbeddingMetadata",
     "ForecastHistory",
     "ChatHistory",
+    "RefreshToken",
+    "AuditLog",
 ]

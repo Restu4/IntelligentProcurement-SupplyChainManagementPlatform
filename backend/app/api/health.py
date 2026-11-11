@@ -39,4 +39,5 @@ async def health_check():
         database=db_status,
         chromadb=chroma_status,
         gemini=gemini_status,
+        embedding_model=settings.EMBEDDING_MODEL_NAME,
     )

@@ -7,3 +7,4 @@ class HealthResponse(BaseModel):
     database: str
     chromadb: str
     gemini: str
+    embedding_model: str | None = None

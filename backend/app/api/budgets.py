@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.schemas.budget import (
 )
 from app.schemas.common import Page
 from app.utils.auth import get_current_user, require_admin
+from app.utils.audit import record_audit
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -143,6 +144,7 @@ async def get_budget(
 @router.post("/budgets", response_model=BudgetResponse, status_code=201)
 async def create_budget(
     body: BudgetCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -167,6 +169,20 @@ async def create_budget(
         f"Created budget {budget.department} {budget.fiscal_year} "
         f"(Rp {budget.total_budget:,.0f})"
     )
+    await record_audit(
+        db,
+        user=current_user,
+        action="budget.created",
+        entity_type="budget",
+        entity_id=budget.id,
+        detail={
+            "department": budget.department,
+            "fiscal_year": budget.fiscal_year,
+            "total_budget": budget.total_budget,
+            "allocated": budget.allocated,
+        },
+        request=request,
+    )
     return _to_response(budget)
 
 
@@ -174,6 +190,7 @@ async def create_budget(
 async def update_budget(
     budget_id: int,
     body: BudgetUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -214,18 +231,45 @@ async def update_budget(
     _recompute_remaining(budget)
     await db.flush()
     await db.refresh(budget)
+    await record_audit(
+        db,
+        user=current_user,
+        action="budget.updated",
+        entity_type="budget",
+        entity_id=budget.id,
+        detail={
+            "department": budget.department,
+            "fiscal_year": budget.fiscal_year,
+            "fields": sorted(changes.keys()),
+            "total_budget": budget.total_budget,
+            "allocated": budget.allocated,
+        },
+        request=request,
+    )
     return _to_response(budget)
 
 
 @router.delete("/budgets/{budget_id}", status_code=204)
 async def delete_budget(
     budget_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     budget = await db.get(Budget, budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail="Budget not found")
+    department = budget.department
+    fiscal_year = budget.fiscal_year
     await db.delete(budget)
     await db.flush()
-    logger.info(f"Deleted budget {budget.department} {budget.fiscal_year}")
+    await record_audit(
+        db,
+        user=current_user,
+        action="budget.deleted",
+        entity_type="budget",
+        entity_id=budget_id,
+        detail={"department": department, "fiscal_year": fiscal_year},
+        request=request,
+    )
+    logger.info(f"Deleted budget {department} {fiscal_year}")

@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-this-to-a-secure-random-secret-key"
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+
+    # Rate limiting (in-memory, per process)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REQUESTS: int = 120
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_LOGIN_REQUESTS: int = 10
 
     # Google Gemini
     GEMINI_API_KEY: str | None = None
@@ -54,7 +61,10 @@ class Settings(BaseSettings):
     CONFIDENCE_THRESHOLD: float = 0.70
 
     # Embedding
-    EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
+    # Multilingual by default so Indonesian questions retrieve as well as
+    # English ones. Changing this requires re-indexing the knowledge base
+    # (python seed_knowledge_base.py) because vectors are not interchangeable.
+    EMBEDDING_MODEL_NAME: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
     # Logging
     LOG_LEVEL: str = "INFO"

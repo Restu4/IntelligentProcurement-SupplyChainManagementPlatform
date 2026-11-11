@@ -2,7 +2,7 @@ import asyncio
 import os
 import uuid
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from typing import Optional
@@ -17,6 +17,7 @@ from app.services.parser_service import ParserService
 from app.services.chunk_service import ChunkService
 from app.services.embedding_service import EmbeddingService
 from app.utils.auth import get_current_user, require_admin
+from app.utils.audit import record_audit
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -38,6 +39,7 @@ def _remove_file(path: str) -> None:
 
 @router.post("/upload", response_model=DocumentUploadResponse, status_code=201)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     description: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
@@ -157,6 +159,19 @@ async def upload_document(
         logger.info(
             f"Uploaded {file.filename}: {len(chunks)} chunks, {len(file_content)} bytes"
         )
+        await record_audit(
+            db,
+            user=current_user,
+            action="document.uploaded",
+            entity_type="document",
+            entity_id=document.id,
+            detail={
+                "original_filename": document.original_filename,
+                "chunks": len(chunks),
+                "bytes": len(file_content),
+            },
+            request=request,
+        )
         await db.flush()
     except HTTPException:
         _remove_file(upload_path)
@@ -212,6 +227,7 @@ async def get_document(
 @router.delete("/documents/{document_id}", status_code=204)
 async def delete_document(
     document_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -233,4 +249,13 @@ async def delete_document(
     filename = doc.original_filename
     await db.delete(doc)
     await db.flush()
+    await record_audit(
+        db,
+        user=current_user,
+        action="document.deleted",
+        entity_type="document",
+        entity_id=document_id,
+        detail={"original_filename": filename},
+        request=request,
+    )
     logger.info(f"Deleted document {document_id}: {filename}")

@@ -1,3 +1,5 @@
+from app.api.analytics import router as analytics_router
+from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.budgets import router as budgets_router
 from app.api.chat import router as chat_router
@@ -15,6 +17,8 @@ routers = [
     purchase_orders_router,
     budgets_router,
     forecast_router,
+    analytics_router,
+    audit_router,
     health_router,
 ]
 

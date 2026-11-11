@@ -18,6 +18,9 @@ os.environ["JWT_SECRET_KEY"] = "test-secret-key-" + "x" * 40
 os.environ["ENVIRONMENT"] = "test"
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["CORS_ORIGINS"] = "http://testserver"
+# Rate limiting is exercised explicitly in tests/test_rate_limit.py; leaving it
+# on would make unrelated tests depend on request count and wall-clock order.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402

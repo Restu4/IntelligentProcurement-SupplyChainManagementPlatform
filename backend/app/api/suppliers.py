@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from typing import Optional
@@ -9,6 +9,7 @@ from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierResponse, SupplierCreate
 from app.services.forecast_service import ForecastService
 from app.utils.auth import get_current_user, require_admin
+from app.utils.audit import record_audit
 
 router = APIRouter(prefix="/api", tags=["Suppliers"])
 
@@ -60,6 +61,7 @@ async def get_supplier(
 @router.post("/suppliers", response_model=SupplierResponse, status_code=201)
 async def create_supplier(
     body: SupplierCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -67,6 +69,15 @@ async def create_supplier(
     db.add(supplier)
     await db.flush()
     await db.refresh(supplier)
+    await record_audit(
+        db,
+        user=current_user,
+        action="supplier.created",
+        entity_type="supplier",
+        entity_id=supplier.id,
+        detail={"name": supplier.name, "status": supplier.status},
+        request=request,
+    )
     return supplier
 
 

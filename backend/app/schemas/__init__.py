@@ -1,4 +1,16 @@
-from app.schemas.auth import LoginRequest, TokenResponse, UserCreate, UserResponse
+from app.schemas.auth import LoginRequest, LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserResponse
+from app.schemas.audit import AuditLogResponse
+from app.schemas.analytics import (
+    AnalyticsOverview,
+    AnalyticsTotals,
+    CategorySpend,
+    MonthlyPoint,
+    ReportBudgetRow,
+    ReportPurchaseOrderRow,
+    ReportSummary,
+    ReportSupplierRow,
+    StatusBreakdown,
+)
 from app.schemas.budget import (
     BudgetCreate,
     BudgetResponse,
@@ -18,7 +30,11 @@ from app.schemas.forecast import ForecastRequest, ForecastResponse, ForecastHist
 from app.schemas.health import HealthResponse
 
 __all__ = [
-    "LoginRequest", "TokenResponse", "UserCreate", "UserResponse",
+    "LoginRequest", "LogoutRequest", "RefreshRequest", "TokenResponse", "UserCreate", "UserResponse",
+    "AuditLogResponse",
+    "AnalyticsOverview", "AnalyticsTotals", "CategorySpend", "MonthlyPoint",
+    "ReportBudgetRow", "ReportPurchaseOrderRow", "ReportSummary", "ReportSupplierRow",
+    "StatusBreakdown",
     "ChatRequest", "ChatResponse", "SourceEvidence", "HistoryResponse",
     "Page",
     "DocumentResponse", "DocumentUploadResponse",
