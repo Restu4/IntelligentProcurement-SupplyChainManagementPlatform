@@ -1,31 +1,122 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Zap } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Area,
-  AreaChart,
-} from "recharts";
+  AlertCircle,
+  Loader2,
+  Play,
+  Sparkles,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
+import {
+  api,
+  type Budget,
+  type ForecastHistoryItem,
+  type ForecastResponse,
+  type ForecastType,
+  type SmartBuyResponse,
+  type Supplier,
+} from "@/lib/api";
+import { cn, formatIDRCompact, formatRelativeTime } from "@/lib/utils";
 
-const priceHistory = [
-  { month: "Jul", actual: 120, predicted: 122 },
-  { month: "Aug", actual: 125, predicted: 124 },
-  { month: "Sep", actual: 118, predicted: 120 },
-  { month: "Oct", actual: 130, predicted: 128 },
-  { month: "Nov", actual: 135, predicted: 133 },
-  { month: "Dec", actual: 140, predicted: 138 },
-  { month: "Jan", predicted: 142 },
-  { month: "Feb", predicted: 145 },
-  { month: "Mar", predicted: 148 },
+const TYPES: { value: ForecastType; label: string }[] = [
+  { value: "price", label: "Price forecast" },
+  { value: "risk", label: "Supplier risk" },
+  { value: "budget", label: "Budget health" },
 ];
 
+function renderValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (Array.isArray(value)) return value.map(renderValue).join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 export default function ForecastPage() {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [history, setHistory] = useState<ForecastHistoryItem[]>([]);
+  const [smartBuy, setSmartBuy] = useState<SmartBuyResponse | null>(null);
+  const [result, setResult] = useState<ForecastResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [type, setType] = useState<ForecastType>("price");
+  const [supplierId, setSupplierId] = useState<string>("");
+  const [budgetId, setBudgetId] = useState<string>("");
+  const [prices, setPrices] = useState("120, 125, 118, 130, 135, 140");
+  const [periods, setPeriods] = useState("3");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [supplierList, budgetPage, historyList, smartBuyResult] = await Promise.all([
+        api.suppliers.list({ limit: 200 }),
+        api.budgets.list({ limit: 200 }),
+        api.forecast.history(10),
+        api.forecast.smartBuy(),
+      ]);
+      setSuppliers(supplierList);
+      setBudgets(budgetPage.items);
+      setHistory(historyList);
+      setSmartBuy(smartBuyResult);
+      setSupplierId((current) => current || String(supplierList[0]?.id ?? ""));
+      setBudgetId((current) => current || String(budgetPage.items[0]?.id ?? ""));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load forecast data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleRun() {
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const payload =
+        type === "price"
+          ? {
+              forecast_type: type,
+              parameters: {
+                historical_prices: prices
+                  .split(",")
+                  .map((value) => Number(value.trim()))
+                  .filter((value) => Number.isFinite(value)),
+                periods: Number(periods) || 3,
+              },
+            }
+          : type === "risk"
+            ? {
+                forecast_type: type,
+                supplier_id: Number(supplierId) || null,
+                parameters: {},
+              }
+            : {
+                forecast_type: type,
+                parameters: { budget_id: Number(budgetId) || undefined },
+              };
+
+      const response = await api.forecast.create(payload);
+      setResult(response);
+      setHistory(await api.forecast.history(10));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Forecast failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const resultEntries = result ? Object.entries(result.result) : [];
+  const confidencePct = result ? Math.round(result.confidence * 100) : 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -34,121 +125,269 @@ export default function ForecastPage() {
           AI Forecast
         </h1>
         <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
-          Intelligent price prediction and procurement recommendations
+          Run forecasts against live supplier and budget data
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="widget-card">
-          <p className="text-sm text-gray-500">Current Price Index</p>
-          <p className="text-2xl font-bold text-primary-900 dark:text-white">140.2</p>
-          <span className="text-xs text-green-500 flex items-center gap-1 mt-1">
-            <TrendingUp className="w-3 h-3" /> +3.8% this month
-          </span>
+      {error && (
+        <div className="widget-card flex items-center gap-3 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>{error}</span>
         </div>
-        <div className="widget-card">
-          <p className="text-sm text-gray-500">Next Month Forecast</p>
-          <p className="text-2xl font-bold text-secondary-500">145.6</p>
-          <span className="text-xs text-green-500 flex items-center gap-1 mt-1">
-            <TrendingUp className="w-3 h-3" /> +3.9% predicted
-          </span>
-        </div>
-        <div className="widget-card">
-          <p className="text-sm text-gray-500">Confidence Interval</p>
-          <p className="text-2xl font-bold text-accent-500">92.4%</p>
-          <span className="text-xs text-gray-400 mt-1">High confidence</span>
-        </div>
-        <div className="widget-card">
-          <p className="text-sm text-gray-500">Buy Recommendation</p>
-          <p className="text-lg font-bold text-green-500 flex items-center gap-2">
-            <Zap className="w-5 h-5" />
-            Buy Now
-          </p>
-          <span className="text-xs text-gray-400 mt-1">Prices expected to rise</span>
-        </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 widget-card">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-semibold text-primary-900 dark:text-white">
-                Price Prediction
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-12">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading forecast data...
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="widget-card">
+              <h3 className="text-lg font-semibold text-primary-900 dark:text-white mb-4">
+                Run a Forecast
               </h3>
+              <div className="space-y-3">
+                <label className="block text-sm">
+                  <span className="text-gray-600 dark:text-gray-300">Forecast type</span>
+                  <select
+                    className="input-field mt-1 w-full"
+                    value={type}
+                    onChange={(event) => setType(event.target.value as ForecastType)}
+                  >
+                    {TYPES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {type === "price" && (
+                  <>
+                    <label className="block text-sm">
+                      <span className="text-gray-600 dark:text-gray-300">
+                        Historical prices (comma separated)
+                      </span>
+                      <input
+                        className="input-field mt-1 w-full"
+                        value={prices}
+                        onChange={(event) => setPrices(event.target.value)}
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="text-gray-600 dark:text-gray-300">Periods ahead</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        className="input-field mt-1 w-full"
+                        value={periods}
+                        onChange={(event) => setPeriods(event.target.value)}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {type === "risk" && (
+                  <label className="block text-sm">
+                    <span className="text-gray-600 dark:text-gray-300">Supplier</span>
+                    <select
+                      className="input-field mt-1 w-full"
+                      value={supplierId}
+                      onChange={(event) => setSupplierId(event.target.value)}
+                    >
+                      {suppliers.map((supplier) => (
+                        <option key={supplier.id} value={supplier.id}>
+                          {supplier.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {type === "budget" && (
+                  <label className="block text-sm">
+                    <span className="text-gray-600 dark:text-gray-300">Budget</span>
+                    <select
+                      className="input-field mt-1 w-full"
+                      value={budgetId}
+                      onChange={(event) => setBudgetId(event.target.value)}
+                    >
+                      {budgets.map((budget) => (
+                        <option key={budget.id} value={budget.id}>
+                          {budget.department} · {budget.fiscal_year} ·{" "}
+                          {formatIDRCompact(budget.total_budget)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <button
+                  className="btn-primary flex items-center gap-2"
+                  onClick={() => void handleRun()}
+                  disabled={running}
+                >
+                  {running ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  {running ? "Running..." : "Run forecast"}
+                </button>
+                <p className="text-xs text-gray-400">
+                  Demand forecasting is not available yet; the backend has no
+                  historical demand series.
+                </p>
+              </div>
+            </div>
+
+            <div className="widget-card">
+              <h3 className="text-lg font-semibold text-primary-900 dark:text-white mb-4">
+                Latest Result
+              </h3>
+              {result ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-xl bg-gray-50 dark:bg-primary-800/50 px-4 py-3">
+                    <span className="text-sm text-gray-600 dark:text-gray-300">
+                      Confidence
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm font-semibold",
+                        confidencePct >= 70
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-yellow-600 dark:text-yellow-400"
+                      )}
+                    >
+                      {confidencePct}%
+                    </span>
+                  </div>
+                  {resultEntries.map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="flex items-start justify-between gap-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 px-4 py-3"
+                    >
+                      <span className="text-sm text-gray-600 dark:text-gray-300 capitalize">
+                        {key.replace(/_/g, " ")}
+                      </span>
+                      <span className="text-sm text-gray-700 dark:text-gray-200 text-right break-all">
+                        {renderValue(value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Run a forecast to see results here.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="widget-card">
+            <div className="flex items-center gap-2 mb-4">
+              <Zap className="w-5 h-5 text-yellow-500" />
+              <h3 className="text-lg font-semibold text-primary-900 dark:text-white">
+                Smart Buy
+              </h3>
+            </div>
+            {smartBuy?.top_supplier ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  {smartBuy.recommendation}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-xl bg-gray-50 dark:bg-primary-800/50 p-3">
+                    <p className="text-xs text-gray-500">Supplier</p>
+                    <p className="text-sm font-semibold text-primary-900 dark:text-white">
+                      {smartBuy.top_supplier.name}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 dark:bg-primary-800/50 p-3">
+                    <p className="text-xs text-gray-500">Composite score</p>
+                    <p className="text-sm font-semibold text-primary-900 dark:text-white">
+                      {smartBuy.top_supplier.score.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 dark:bg-primary-800/50 p-3">
+                    <p className="text-xs text-gray-500">Delivery / Quality</p>
+                    <p className="text-sm font-semibold text-primary-900 dark:text-white">
+                      {smartBuy.top_supplier.delivery_score ?? "—"} /{" "}
+                      {smartBuy.top_supplier.quality_score ?? "—"}
+                    </p>
+                  </div>
+                </div>
+                {smartBuy.all_scores && smartBuy.all_scores.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {smartBuy.all_scores.map((entry) => (
+                      <span
+                        key={entry.name}
+                        className="badge badge-info text-xs"
+                      >
+                        {entry.name}: {entry.score.toFixed(2)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Historical data + AI forecast
+                No active suppliers available for a recommendation.
               </p>
-            </div>
-            <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-secondary-500" />
-                <span className="text-gray-500">Actual</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-accent-500" />
-                <span className="text-gray-500">Forecast</span>
-              </div>
-            </div>
+            )}
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={priceHistory}>
-                <defs>
-                  <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-200 dark:text-gray-700" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} className="text-gray-400" />
-                <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} className="text-gray-400" />
-                <Tooltip contentStyle={{ backgroundColor: "rgba(15,23,42,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", color: "#fff" }} />
-                <Area type="monotone" dataKey="predicted" stroke="#3B82F6" strokeWidth={2} fill="url(#forecastGrad)" strokeDasharray="5 5" />
-                <Line type="monotone" dataKey="actual" stroke="#14B8A6" strokeWidth={2} dot={{ fill: "#14B8A6" }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
 
-        <div className="widget-card">
-          <h3 className="text-lg font-semibold text-primary-900 dark:text-white mb-4">
-            Smart Buy Recommendation
-          </h3>
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-gradient-to-br from-secondary-500/10 to-secondary-600/5 border border-secondary-500/20">
-              <p className="text-sm font-semibold text-secondary-600 dark:text-secondary-400">
-                Recommended: PT Karya Mandiri
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Best price-quality ratio with 94% quality score
-              </p>
+          <div className="glass rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-700/50">
+            <div className="p-4 md:p-6 border-b border-gray-200 dark:border-gray-700/50 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-secondary-500" />
+              <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">
+                Forecast History
+              </h3>
             </div>
-
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">PT Karya Mandiri</span>
-                <span className="font-semibold text-green-500">94%</span>
+            {history.length === 0 ? (
+              <p className="p-6 text-sm text-gray-500 dark:text-gray-400">
+                No forecasts have been run yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700/30">
+                      <th className="px-4 md:px-6 py-3 font-medium">Type</th>
+                      <th className="px-4 md:px-6 py-3 font-medium">Supplier</th>
+                      <th className="px-4 md:px-6 py-3 font-medium">Confidence</th>
+                      <th className="px-4 md:px-6 py-3 font-medium">When</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700/30">
+                    {history.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-primary-800/30">
+                        <td className="px-4 md:px-6 py-3 capitalize text-primary-900 dark:text-white">
+                          {item.forecast_type}
+                        </td>
+                        <td className="px-4 md:px-6 py-3 text-gray-500 dark:text-gray-400">
+                          {suppliers.find((supplier) => supplier.id === item.supplier_id)?.name ?? "—"}
+                        </td>
+                        <td className="px-4 md:px-6 py-3 text-gray-500 dark:text-gray-400">
+                          {item.confidence !== null
+                            ? `${Math.round(item.confidence * 100)}%`
+                            : "—"}
+                        </td>
+                        <td className="px-4 md:px-6 py-3 text-gray-500 dark:text-gray-400">
+                          {formatRelativeTime(item.created_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">PT ABC</span>
-                <span className="font-semibold text-secondary-500">92%</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">CV Sukses Abadi</span>
-                <span className="font-semibold text-accent-500">87%</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">PT Maju Jaya</span>
-                <span className="font-semibold text-yellow-500">80%</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">PT XYZ</span>
-                <span className="font-semibold text-red-500">72%</span>
-              </div>
-            </div>
+            )}
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

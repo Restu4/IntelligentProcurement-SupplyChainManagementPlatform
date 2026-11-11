@@ -1,31 +1,115 @@
 "use client";
 
-import { useState } from "react";
-import { Settings, User, Bell, Shield, Check, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  ScrollText,
+  Settings,
+  Shield,
+  User,
+} from "lucide-react";
+import {
+  api,
+  ApiError,
+  type AuditLogItem,
+  type HealthResponse,
+  type User as ApiUser,
+} from "@/lib/api";
+import { cn, formatDate, formatRelativeTime } from "@/lib/utils";
 
-type ProfileFields = { fullName: string; email: string; role: string };
-type NotificationFields = { emailNotifications: boolean; pushNotifications: boolean; weeklyDigest: boolean };
-type SecurityFields = { twoFactorAuth: boolean; sessionTimeout: string; apiAccess: string };
+const ENTITY_FILTERS = [
+  "all",
+  "auth",
+  "purchase_order",
+  "budget",
+  "supplier",
+  "document",
+  "user",
+] as const;
+
+const PAGE_SIZE = 20;
+
+function statusTone(value: string | null | undefined): string {
+  const normalised = (value ?? "").toLowerCase();
+  if (["connected", "configured", "healthy"].includes(normalised)) {
+    return "text-green-600 dark:text-green-400";
+  }
+  if (["disconnected", "not configured", "unhealthy"].includes(normalised)) {
+    return "text-red-600 dark:text-red-400";
+  }
+  return "text-gray-500 dark:text-gray-400";
+}
 
 export default function SettingsPage() {
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [editingSecurity, setEditingSecurity] = useState(false);
+  const [user, setUser] = useState<ApiUser | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [profile, setProfile] = useState<ProfileFields>({ fullName: "Restu", email: "restu@smartprocure.co.id", role: "Procurement Manager" });
-  const [profileDraft, setProfileDraft] = useState<ProfileFields>(profile);
+  const [audit, setAudit] = useState<AuditLogItem[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditOffset, setAuditOffset] = useState(0);
+  const [auditEntity, setAuditEntity] = useState<(typeof ENTITY_FILTERS)[number]>("all");
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
-  const [notifications, setNotifications] = useState<NotificationFields>({ emailNotifications: true, pushNotifications: true, weeklyDigest: false });
-  const [notifSaved, setNotifSaved] = useState(false);
+  const isAdmin = user?.role === "admin";
 
-  const [security, setSecurity] = useState<SecurityFields>({ twoFactorAuth: false, sessionTimeout: "30 minutes", apiAccess: "Active" });
-  const [securityDraft, setSecurityDraft] = useState<SecurityFields>(security);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [me, status] = await Promise.all([api.auth.me(), api.health()]);
+        if (cancelled) return;
+        setUser(me);
+        setHealth(status);
+      } catch (err) {
+        if (cancelled) return;
+        setError(
+          err instanceof ApiError && err.status === 401
+            ? "Your session has expired. Please sign in again."
+            : err instanceof Error
+              ? err.message
+              : "Failed to load settings"
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const toggleNotification = (key: keyof NotificationFields) => {
-    setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
-    setNotifSaved(true);
-    setTimeout(() => setNotifSaved(false), 2000);
-  };
+  const loadAudit = useCallback(async () => {
+    if (!isAdmin) return;
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const page = await api.audit.list({
+        limit: PAGE_SIZE,
+        offset: auditOffset,
+        entity_type: auditEntity === "all" ? undefined : auditEntity,
+      });
+      setAudit(page.items);
+      setAuditTotal(page.total);
+    } catch (err) {
+      setAuditError(err instanceof Error ? err.message : "Failed to load audit log");
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [isAdmin, auditOffset, auditEntity]);
+
+  useEffect(() => {
+    void loadAudit();
+  }, [loadAudit]);
+
+  const canGoBack = auditOffset > 0;
+  const canGoForward = auditOffset + PAGE_SIZE < auditTotal;
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -34,133 +118,270 @@ export default function SettingsPage() {
           <Settings className="w-6 h-6 md:w-8 md:h-8 text-secondary-500" />
           Settings
         </h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Manage your account and platform preferences</p>
+        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">
+          Account details, system status and the audit trail
+        </p>
       </div>
 
-      <div className="space-y-4 md:space-y-6">
-        {/* Profile */}
-        <div className="widget-card">
-          <div className="flex items-center gap-3 md:gap-4 mb-5 md:mb-6">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
-              <User className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">Profile</h3>
-              <p className="text-xs md:text-sm text-gray-500">Manage your account information</p>
-            </div>
-            {!editingProfile && (
-              <button onClick={() => { setProfileDraft(profile); setEditingProfile(true); }} className="text-xs text-accent-500 hover:text-accent-600 font-medium shrink-0">Edit</button>
-            )}
-          </div>
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</span>
-              {editingProfile ? (
-                <input type="text" value={profileDraft.fullName} onChange={(e) => setProfileDraft({ ...profileDraft, fullName: e.target.value })} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-primary-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-500 w-full sm:w-auto" />
-              ) : <span className="text-sm text-gray-500">{profile.fullName}</span>}
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Email</span>
-              {editingProfile ? (
-                <input type="email" value={profileDraft.email} onChange={(e) => setProfileDraft({ ...profileDraft, email: e.target.value })} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-primary-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-500 w-full sm:w-auto" />
-              ) : <span className="text-sm text-gray-500">{profile.email}</span>}
-            </div>
-            <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Role</span>
-              <span className="text-sm text-gray-500">{profile.role}</span>
-            </div>
-          </div>
-          {editingProfile && (
-            <div className="flex items-center gap-3 mt-4 justify-end">
-              <button onClick={() => { setProfileDraft(profile); setEditingProfile(false); }} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-primary-800 transition-colors">
-                <X className="w-3.5 h-3.5" /> Cancel
-              </button>
-              <button onClick={() => { setProfile(profileDraft); setEditingProfile(false); }} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-accent-500 text-white hover:bg-accent-600 transition-colors">
-                <Check className="w-3.5 h-3.5" /> Save
-              </button>
-            </div>
-          )}
+      {error && (
+        <div className="widget-card flex items-center gap-3 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span>{error}</span>
         </div>
+      )}
 
-        {/* Notifications */}
-        <div className="widget-card">
-          <div className="flex items-center gap-3 md:gap-4 mb-5 md:mb-6">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
-              <Bell className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">Notifications</h3>
-              <p className="text-xs md:text-sm text-gray-500">Configure your notification preferences</p>
-            </div>
-            <span className={cn("text-xs font-medium transition-opacity duration-300 shrink-0", notifSaved ? "opacity-100 text-green-500" : "opacity-0")}>Saved!</span>
-          </div>
-          <div className="space-y-3">
-            {([["emailNotifications", "Email Notifications", "Receive procurement alerts via email"], ["pushNotifications", "Push Notifications", "Get real-time browser notifications"], ["weeklyDigest", "Weekly Digest", "Weekly summary of procurement activities"]] as const).map(([key, title, desc]) => (
-              <div key={key} className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-3">
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
-                  <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
-                </div>
-                <button onClick={() => toggleNotification(key)} className={cn("relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 shrink-0", notifications[key] ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}>
-                  <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 shadow-sm", notifications[key] ? "translate-x-6" : "translate-x-1")} />
-                </button>
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-12">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading settings...
+        </div>
+      ) : (
+        <>
+          <div className="widget-card">
+            <div className="flex items-center gap-3 md:gap-4 mb-5 md:mb-6">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
+                <User className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
               </div>
-            ))}
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">
+                  Account
+                </h3>
+                <p className="text-xs md:text-sm text-gray-500">
+                  Read directly from the authenticated session
+                </p>
+              </div>
+            </div>
+            {user ? (
+              <div className="space-y-3">
+                {[
+                  ["Username", user.username],
+                  ["Full Name", user.full_name || "-"],
+                  ["Email", user.email],
+                  ["Role", user.role],
+                  ["Status", user.is_active ? "Active" : "Deactivated"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-2"
+                  >
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {label}
+                    </span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Account information is unavailable.
+              </p>
+            )}
+            <p className="text-xs text-gray-400 mt-4">
+              Profile editing is not exposed by the API yet; ask an administrator to
+              change roles or account status.
+            </p>
           </div>
-        </div>
 
-        {/* Security */}
-        <div className="widget-card">
-          <div className="flex items-center gap-3 md:gap-4 mb-5 md:mb-6">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
-              <Shield className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
+          <div className="widget-card">
+            <div className="flex items-center gap-3 md:gap-4 mb-5 md:mb-6">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
+                <Activity className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">
+                  System Status
+                </h3>
+                <p className="text-xs md:text-sm text-gray-500">
+                  Live health check from the backend
+                </p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">Security</h3>
-              <p className="text-xs md:text-sm text-gray-500">Manage security settings</p>
-            </div>
-            {!editingSecurity && (
-              <button onClick={() => { setSecurityDraft(security); setEditingSecurity(true); }} className="text-xs text-accent-500 hover:text-accent-600 font-medium shrink-0">Edit</button>
+            {health ? (
+              <div className="space-y-3">
+                {[
+                  ["Backend", health.status],
+                  ["Version", health.version],
+                  ["Database", health.database],
+                  ["Vector store", health.chromadb],
+                  ["Gemini", health.gemini],
+                  ["Embedding model", health.embedding_model ?? "unknown"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-2"
+                  >
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {label}
+                    </span>
+                    <span className={cn("text-sm break-all sm:text-right", statusTone(value))}>
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Health information is unavailable.
+              </p>
             )}
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-3">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Two-Factor Auth</span>
-              {editingSecurity ? (
-                <button onClick={() => setSecurityDraft({ ...securityDraft, twoFactorAuth: !securityDraft.twoFactorAuth })} className={cn("relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 shrink-0", securityDraft.twoFactorAuth ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}>
-                  <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 shadow-sm", securityDraft.twoFactorAuth ? "translate-x-6" : "translate-x-1")} />
-                </button>
-              ) : <span className={cn("text-sm font-medium", security.twoFactorAuth ? "text-green-500" : "text-gray-500")}>{security.twoFactorAuth ? "Enabled" : "Disabled"}</span>}
+
+          <div className="widget-card">
+            <div className="flex items-center gap-3 md:gap-4 mb-5 md:mb-6">
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
+                <Shield className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">
+                  Session Security
+                </h3>
+                <p className="text-xs md:text-sm text-gray-500">
+                  Access and refresh token policy
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Session Timeout</span>
-              {editingSecurity ? (
-                <select value={securityDraft.sessionTimeout} onChange={(e) => setSecurityDraft({ ...securityDraft, sessionTimeout: e.target.value })} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-primary-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-500 w-full sm:w-auto">
-                  <option value="15 minutes">15 minutes</option>
-                  <option value="30 minutes">30 minutes</option>
-                  <option value="1 hour">1 hour</option>
-                  <option value="2 hours">2 hours</option>
-                  <option value="4 hours">4 hours</option>
-                </select>
-              ) : <span className="text-sm text-gray-500">{security.sessionTimeout}</span>}
-            </div>
-            <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">API Access</span>
-              <span className="text-sm text-gray-500">{security.apiAccess}</span>
+            <div className="space-y-3">
+              {[
+                ["Access token", "Short-lived bearer token"],
+                ["Refresh token", "Rotated on every refresh; reuse revokes the session"],
+                ["Rate limiting", "Applied per client IP by the API"],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between py-3 px-4 rounded-xl bg-gray-50 dark:bg-primary-800/50 gap-2"
+                >
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {label}
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400 sm:text-right">
+                    {value}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
-          {editingSecurity && (
-            <div className="flex items-center gap-3 mt-4 justify-end">
-              <button onClick={() => { setSecurityDraft(security); setEditingSecurity(false); }} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-primary-800 transition-colors">
-                <X className="w-3.5 h-3.5" /> Cancel
-              </button>
-              <button onClick={() => { setSecurity(securityDraft); setEditingSecurity(false); }} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-accent-500 text-white hover:bg-accent-600 transition-colors">
-                <Check className="w-3.5 h-3.5" /> Save
-              </button>
+
+          <div className="widget-card">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3 md:gap-4 min-w-0">
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gray-100 dark:bg-primary-800 flex items-center justify-center shrink-0">
+                  <ScrollText className="w-5 h-5 md:w-6 md:h-6 text-secondary-500" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base md:text-lg font-semibold text-primary-900 dark:text-white">
+                    Audit Log
+                  </h3>
+                  <p className="text-xs md:text-sm text-gray-500">
+                    {isAdmin
+                      ? `${auditTotal} recorded event${auditTotal === 1 ? "" : "s"}`
+                      : "Administrators only"}
+                  </p>
+                </div>
+              </div>
+              {isAdmin && (
+                <select
+                  className="input-field py-2 pr-8 text-sm"
+                  value={auditEntity}
+                  onChange={(event) => {
+                    setAuditEntity(event.target.value as (typeof ENTITY_FILTERS)[number]);
+                    setAuditOffset(0);
+                  }}
+                >
+                  {ENTITY_FILTERS.map((option) => (
+                    <option key={option} value={option}>
+                      {option === "all" ? "All entities" : option}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+
+            {!isAdmin ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Sign in with an administrator account to view the audit trail.
+              </p>
+            ) : auditError ? (
+              <p className="text-sm text-red-600 dark:text-red-400">{auditError}</p>
+            ) : auditLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-6 justify-center">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading audit log...
+              </div>
+            ) : audit.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No audit events recorded yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700/30">
+                      <th className="px-3 py-2 font-medium">When</th>
+                      <th className="px-3 py-2 font-medium">User</th>
+                      <th className="px-3 py-2 font-medium">Action</th>
+                      <th className="px-3 py-2 font-medium">Entity</th>
+                      <th className="px-3 py-2 font-medium">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700/30">
+                    {audit.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-primary-800/30">
+                        <td
+                          className="px-3 py-2 text-gray-500 dark:text-gray-400 whitespace-nowrap"
+                          title={formatDate(item.created_at, { dateStyle: "medium", timeStyle: "medium" })}
+                        >
+                          {formatRelativeTime(item.created_at)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                          {item.username ?? "-"}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-primary-900 dark:text-white">
+                          {item.action}
+                        </td>
+                        <td
+                          className="px-3 py-2 text-gray-500 dark:text-gray-400"
+                          title={item.detail ?? undefined}
+                        >
+                          {item.entity_type ?? "-"}
+                          {item.entity_id ? ` #${item.entity_id}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">
+                          {item.ip_address ?? "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="flex items-center justify-between mt-4">
+                  <span className="text-xs text-gray-400">
+                    {auditOffset + 1}–{Math.min(auditOffset + PAGE_SIZE, auditTotal)} of{" "}
+                    {auditTotal}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="btn-outline text-xs flex items-center gap-1"
+                      onClick={() => setAuditOffset((value) => Math.max(0, value - PAGE_SIZE))}
+                      disabled={!canGoBack || auditLoading}
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      Previous
+                    </button>
+                    <button
+                      className="btn-outline text-xs flex items-center gap-1"
+                      onClick={() => setAuditOffset((value) => value + PAGE_SIZE)}
+                      disabled={!canGoForward || auditLoading}
+                    >
+                      Next
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

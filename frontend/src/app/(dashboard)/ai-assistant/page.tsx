@@ -34,56 +34,6 @@ const WELCOME_MESSAGE: Message = {
   content: "Hello! I'm **SmartProcure AI**, your intelligent procurement assistant.\n\nI can help you with:\n- Supplier evaluation and risk analysis\n- Procurement policies and SOP\n- Contract guidelines and SLA\n- Budget and forecast insights\n\nAsk me anything about your procurement data!",
 };
 
-function getMockAnswer(question: string): Message {
-  const q = question.toLowerCase();
-
-  if (q.includes("best supplier") || q.includes("best") || q.includes("rekomendasi")) {
-    return {
-      id: (Date.now() + 1).toString(), role: "assistant",
-      content: "Berdasarkan analisis data procurement kami, **PT Surya Pratama** merupakan supplier terbaik saat ini:\n\n- **Kualitas Produk**: Skor 95/100\n- **Ketepatan Waktu**: Rata-rata pengiriman 2 hari lebih cepat dari SLA\n- **Harga Kompetitif**: 8-12% di bawah rata-rata pasar\n- **Rating Kepuasan**: 4.8/5 dari 156 transaksi\n\nRekomendasi lain:\n1. PT Maju Bersama — unggul kategori elektronik\n2. CV Teknik Sejahtera — terbaik untuk spare parts industri",
-      sources: [{ document: "supplier-evaluation-2024.pdf", chunk: "Supplier performance ranking Q4 2024", score: 0.94 }], confidence: 93,
-    };
-  }
-
-  if (q.includes("approval") || q.includes("otorisasi") || q.includes("limit")) {
-    return {
-      id: (Date.now() + 1).toString(), role: "assistant",
-      content: "Batasan otorisasi approval procurement sesuai **SOP Procurement No. 003/2024**:\n\n| Nilai PO | Approver |\n|----------|----------|\n| < Rp 50 juta | Manager Procurement |\n| Rp 50 juta - Rp 500 juta | Direktur Operasional |\n| Rp 500 juta - Rp 2 miliar | Direktur Utama |\n| > Rp 2 miliar | Rapat Direksi |",
-      sources: [{ document: "SOP-Procurement-2024.pdf", chunk: "Approval limits", score: 0.96 }], confidence: 95,
-    };
-  }
-
-  if (q.includes("sla") || q.includes("delivery") || q.includes("pengiriman")) {
-    return {
-      id: (Date.now() + 1).toString(), role: "assistant",
-      content: "Standar SLA pengiriman per kategori barang:\n\n- **Raw Material**: Maksimal 7 hari kerja\n- **MRO**: Maksimal 14 hari kerja\n- **Peralatan Kantor**: Maksimal 21 hari kerja\n- **Mesin Industri**: Maksimal 30 hari kerja\n\nMonitoring: Auto-notifikasi H-3, escalation otomatis jika terlambat > 2 hari.",
-      sources: [{ document: "SLA-Procurement-Policy.pdf", chunk: "Delivery SLA standards", score: 0.97 }], confidence: 92,
-    };
-  }
-
-  if (q.includes("penalty") || q.includes("late") || q.includes("terlambat") || q.includes("denda")) {
-    return {
-      id: (Date.now() + 1).toString(), role: "assistant",
-      content: "Sanksi keterlambatan pengiriman:\n\n| Keterlambatan | Sanksi |\n|---------------|--------|\n| 1-3 hari | Denda 0.5% dari nilai PO |\n| 4-7 hari | Denda 1% + Teguran tertulis |\n| 8-14 hari | Denda 2% + Blacklist warning |\n| > 14 hari | Denda 5% + Blacklist permanen |",
-      sources: [{ document: "Master-Contract-Template.pdf", chunk: "Penalty clauses", score: 0.95 }], confidence: 91,
-    };
-  }
-
-  if (q.includes("budget") || q.includes("anggaran") || q.includes("alokasi")) {
-    return {
-      id: (Date.now() + 1).toString(), role: "assistant",
-      content: "Alokasi budget procurement Q3 2024:\n\n**Total: Rp 45.2 Miliar**\n\n| Kategori | Alokasi |\n|----------|---------|\n| Raw Material | Rp 22.6 Miliar (50%) |\n| MRO & Spare Parts | Rp 9.04 Miliar (20%) |\n| Peralatan & Mesin | Rp 6.78 Miliar (15%) |\n| Jasa & Konsultan | Rp 4.52 Miliar (10%) |",
-      sources: [{ document: "Budget-Allocation-Q3-2024.xlsx", chunk: "Budget distribution", score: 0.93 }], confidence: 88,
-    };
-  }
-
-  return {
-    id: (Date.now() + 1).toString(), role: "assistant",
-    content: "Terima kasih! Sebagai SmartProcure AI, saya bisa membantu Anda dengan:\n\n- **SOP & Kebijakan Procurement**\n- **Database Supplier**\n- **Kontrak & SLA**\n- **Budget & Forecast**\n\nCoba tanyakan topik spesifik seperti \"Siapa supplier terbaik?\" atau \"Berapa limit approval?\"",
-    sources: [{ document: "Knowledge-Base-Index.pdf", chunk: "Available topics", score: 0.85 }], confidence: 85,
-  };
-}
-
 function getGreetingTitle(messages: Message[]): string {
   const firstUserMsg = messages.find((m) => m.role === "user");
   if (!firstUserMsg) return "New Chat";
@@ -125,9 +75,15 @@ export default function AIAssistantPage() {
       const updated = [...newMessages, assistantMessage];
       setMessages(updated);
       setSessions((prev) => prev.map((s) => (s.id === (activeSessionId || Date.now().toString())) ? { ...s, messages: updated } : s));
-    } catch {
-      const mockMessage = getMockAnswer(q);
-      const updated = [...newMessages, mockMessage];
+    } catch (err) {
+      const description =
+        err instanceof Error ? err.message : "The assistant is unavailable.";
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `I could not reach the assistant: ${description}`,
+      };
+      const updated = [...newMessages, errorMessage];
       setMessages(updated);
       setSessions((prev) => prev.map((s) => (s.id === (activeSessionId || Date.now().toString())) ? { ...s, messages: updated } : s));
     } finally { setLoading(false); }
@@ -145,9 +101,15 @@ export default function AIAssistantPage() {
       const updated = [...truncated, assistantMessage];
       setMessages(updated);
       setSessions((prev) => prev.map((s) => (s.id === activeSessionId ? { ...s, messages: updated } : s)));
-    } catch {
-      const mockMessage = getMockAnswer(userMessage.content);
-      const updated = [...truncated, mockMessage];
+    } catch (err) {
+      const description =
+        err instanceof Error ? err.message : "The assistant is unavailable.";
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `I could not reach the assistant: ${description}`,
+      };
+      const updated = [...truncated, errorMessage];
       setMessages(updated);
       setSessions((prev) => prev.map((s) => (s.id === activeSessionId ? { ...s, messages: updated } : s)));
     } finally { setLoading(false); }

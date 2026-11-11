@@ -2,8 +2,9 @@
  * Typed client for the SmartProcure AI FastAPI backend.
  *
  * Base URL is configurable through NEXT_PUBLIC_API_URL (defaults to the local
- * development server). The JWT is read from localStorage["token"] and attached
- * automatically to every authenticated request.
+ * development server). The access token and refresh token are kept in
+ * localStorage; expired access tokens are refreshed transparently (single
+ * flight) and the original request is retried once.
  */
 
 export const API_BASE_URL = (
@@ -11,6 +12,7 @@ export const API_BASE_URL = (
 ).replace(/\/+$/, "");
 
 const TOKEN_KEY = "token";
+const REFRESH_TOKEN_KEY = "refresh_token";
 
 /* -------------------------------------------------------------------------- */
 /*                                   Errors                                   */
@@ -56,6 +58,17 @@ export const tokenStore = {
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem(TOKEN_KEY);
   },
+  getRefresh(): string | null {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  },
+  save(tokens: Pick<TokenResponse, "access_token" | "refresh_token">): void {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(TOKEN_KEY, tokens.access_token);
+    if (tokens.refresh_token) {
+      window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+    }
+  },
   set(token: string): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(TOKEN_KEY, token);
@@ -63,6 +76,7 @@ export const tokenStore = {
   clear(): void {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(TOKEN_KEY);
+    window.localStorage.removeItem(REFRESH_TOKEN_KEY);
   },
   isAuthenticated(): boolean {
     return Boolean(tokenStore.get());
@@ -75,7 +89,9 @@ export const tokenStore = {
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
+  expires_in: number;
 }
 
 export interface User {
@@ -294,6 +310,106 @@ export interface HealthResponse {
   database: string;
   chromadb: string;
   gemini: string;
+  embedding_model: string | null;
+}
+
+/* ---------------------------------- Analytics ----------------------------- */
+
+export interface AnalyticsTotals {
+  total_budget: number;
+  allocated: number;
+  remaining: number;
+  utilization: number;
+  /** Approved + completed purchase orders only. */
+  spend: number;
+  pending_amount: number;
+  purchase_orders: number;
+  avg_order_value: number;
+  active_suppliers: number;
+  high_risk_suppliers: number;
+  documents: number;
+  pending_pos: number;
+  completed_pos: number;
+}
+
+export interface MonthlyPoint {
+  month: string;
+  month_number: number;
+  orders: number;
+  spend: number;
+}
+
+export interface CategorySpend {
+  category: string;
+  spend: number;
+  share: number;
+}
+
+export interface StatusBreakdown {
+  status: string;
+  count: number;
+  amount: number;
+}
+
+export interface AnalyticsOverview {
+  fiscal_year: number;
+  totals: AnalyticsTotals;
+  monthly: MonthlyPoint[];
+  categories: CategorySpend[];
+  status_breakdown: StatusBreakdown[];
+  generated_at: string;
+}
+
+/* ---------------------------------- Reports ------------------------------- */
+
+export interface ReportBudgetRow {
+  department: string;
+  fiscal_year: number;
+  total_budget: number;
+  allocated: number;
+  remaining: number;
+  utilization: number;
+}
+
+export interface ReportSupplierRow {
+  name: string;
+  category: string | null;
+  status: string;
+  risk_level: string | null;
+  delivery_score: number | null;
+  quality_score: number | null;
+}
+
+export interface ReportPurchaseOrderRow {
+  po_number: string;
+  supplier_name: string | null;
+  amount: number;
+  status: string;
+  approval_level: string | null;
+  created_at: string;
+}
+
+export interface ReportSummary {
+  fiscal_year: number;
+  generated_at: string;
+  totals: AnalyticsTotals;
+  budgets: ReportBudgetRow[];
+  suppliers: ReportSupplierRow[];
+  purchase_orders: ReportPurchaseOrderRow[];
+}
+
+/* ----------------------------------- Audit -------------------------------- */
+
+export interface AuditLogItem {
+  id: number;
+  user_id: number | null;
+  username: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  detail: string | null;
+  ip_address: string | null;
+  created_at: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -306,6 +422,48 @@ interface RequestOptions {
   auth?: boolean;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+}
+
+/**
+ * Exchange the stored refresh token for a new pair.
+ *
+ * A module-level promise makes this single-flight: a dashboard that fires six
+ * parallel requests when the access token expires performs one refresh, not
+ * six (which would trip reuse detection on the backend).
+ */
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const refreshToken = tokenStore.getRefresh();
+  if (!refreshToken) return null;
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          tokenStore.clear();
+          return null;
+        }
+        const tokens = (await response.json()) as TokenResponse;
+        tokenStore.save(tokens);
+        return tokens.access_token;
+      } catch {
+        // Network failure: keep the tokens so a later retry can succeed.
+        return null;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+
+  return refreshInFlight;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -326,26 +484,35 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (token) finalHeaders.Authorization = `Bearer ${token}`;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers: finalHeaders,
-      body: payload,
-      signal,
-      cache: "no-store",
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new ApiError(
-      `Cannot reach the API at ${API_BASE_URL}. Is the backend running?`,
-      0,
-      error
-    );
-  }
+  const send = async (): Promise<Response> => {
+    try {
+      return await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        headers: finalHeaders,
+        body: payload,
+        signal,
+        cache: "no-store",
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      throw new ApiError(
+        `Cannot reach the API at ${API_BASE_URL}. Is the backend running?`,
+        0,
+        error
+      );
+    }
+  };
+
+  let response = await send();
 
   if (response.status === 401 && auth) {
-    tokenStore.clear();
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      finalHeaders.Authorization = `Bearer ${refreshed}`;
+      response = await send();
+    } else {
+      tokenStore.clear();
+    }
   }
 
   if (!response.ok) {
@@ -411,8 +578,16 @@ export const api = {
     me(): Promise<User> {
       return request<User>("/api/me");
     },
-    logout(): void {
+    logout(): Promise<void> {
+      const refreshToken = tokenStore.getRefresh();
       tokenStore.clear();
+      if (!refreshToken) return Promise.resolve();
+      // Best effort: the local session is already gone even if this fails.
+      return request<void>("/api/logout", {
+        method: "POST",
+        body: { refresh_token: refreshToken },
+        auth: false,
+      }).catch(() => undefined);
     },
   },
 
@@ -550,6 +725,34 @@ export const api = {
     },
     smartBuy(): Promise<SmartBuyResponse> {
       return request<SmartBuyResponse>("/api/forecast/smart-buy");
+    },
+  },
+
+  analytics: {
+    overview(fiscal_year?: number): Promise<AnalyticsOverview> {
+      return request<AnalyticsOverview>(
+        `/api/analytics/overview${buildQuery({ fiscal_year })}`
+      );
+    },
+  },
+
+  reports: {
+    summary(fiscal_year?: number): Promise<ReportSummary> {
+      return request<ReportSummary>(
+        `/api/reports/summary${buildQuery({ fiscal_year })}`
+      );
+    },
+  },
+
+  audit: {
+    list(params?: {
+      action?: string;
+      entity_type?: string;
+      user_id?: number;
+      limit?: number;
+      offset?: number;
+    }): Promise<Page<AuditLogItem>> {
+      return request<Page<AuditLogItem>>(`/api/audit-logs${buildQuery(params)}`);
     },
   },
 

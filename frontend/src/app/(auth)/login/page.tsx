@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, Eye, EyeOff } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, tokenStore } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,7 +19,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await api.auth.login(username, password);
-      localStorage.setItem("token", res.access_token);
+      tokenStore.save(res);
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Login failed");

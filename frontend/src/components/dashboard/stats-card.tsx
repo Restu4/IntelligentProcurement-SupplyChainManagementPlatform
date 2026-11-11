@@ -26,14 +26,18 @@ const iconMap: Record<string, any> = {
 interface StatsCardProps {
   label: string;
   value: string;
-  change: string;
+  /** Optional signed percentage, e.g. "+4.2%". */
+  change?: string;
+  /** Replaces the default "vs last month" caption. */
+  hint?: string;
   icon: string;
   color: string;
 }
 
-export function StatsCard({ label, value, change, icon, color }: StatsCardProps) {
-  const Icon = iconMap[icon];
-  const isPositive = change.startsWith("+");
+export function StatsCard({ label, value, change, hint, icon, color }: StatsCardProps) {
+  const Icon = iconMap[icon] ?? DollarSign;
+  const isPositive = change ? change.startsWith("+") : false;
+  const hasFooter = Boolean(change || hint);
 
   return (
     <div className="widget-card group">
@@ -45,17 +49,25 @@ export function StatsCard({ label, value, change, icon, color }: StatsCardProps)
           <p className="text-2xl font-bold text-primary-900 dark:text-white tracking-tight">
             {value}
           </p>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "text-xs font-semibold",
-                isPositive ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+          {hasFooter && (
+            <div className="flex items-center gap-1.5">
+              {change && (
+                <span
+                  className={cn(
+                    "text-xs font-semibold",
+                    isPositive
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-red-600 dark:text-red-400"
+                  )}
+                >
+                  {change}
+                </span>
               )}
-            >
-              {change}
-            </span>
-            <span className="text-xs text-gray-400">vs last month</span>
-          </div>
+              <span className="text-xs text-gray-400">
+                {hint ?? "vs last month"}
+              </span>
+            </div>
+          )}
         </div>
         <div
           className={cn(
