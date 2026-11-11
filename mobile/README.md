@@ -1,17 +1,58 @@
-# smartprocure_mobile
+# SmartProcure AI — Mobile
 
-A new Flutter project.
+Flutter client for the SmartProcure AI backend. Material 3 dark theme.
 
-## Getting Started
+## Features
 
-This project is a starting point for a Flutter application.
+| Tab | What it does |
+| --- | --- |
+| **Home** | Live supplier/document counters, backend health, supplier risk summary |
+| **AI Chat** | RAG Q&A with confidence badge, expandable sources, typing indicator |
+| **Suppliers** | Search, risk filters, delivery/quality scores, risk assessment sheet |
+| **Docs** | Document list; upload and delete for admins only |
+| **Settings** | Profile, API endpoint, sign out |
 
-A few resources to get you started if this is your first Flutter project:
+## Run
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter analyze
+flutter test
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+# Android emulator (host machine is 10.0.2.2)
+flutter run
+
+# Physical device / remote API
+flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8000
+```
+
+### Web
+
+The web runner is generated on demand:
+
+```bash
+flutter create --platforms=web .
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000
+```
+
+## Demo accounts
+
+| Username | Password | Role |
+| --- | --- | --- |
+| `admin` | `admin123` | full access |
+| `viewer` | `viewer123` | read-only |
+
+## Structure
+
+```
+lib/
+├── config/       # API base URL (dart-define aware)
+├── models/       # JSON models
+├── providers/    # Auth, chat, suppliers, documents
+├── screens/      # Login, home, dashboard, chat, suppliers, documents, settings
+├── services/     # HTTP client + secure token storage
+├── theme/        # Material 3 dark theme
+├── utils/        # Formatters
+├── widgets/      # Shared UI
+└── main.dart
+```
