@@ -1,0 +1,22 @@
+# Lightweight dependency set for tests and CI.
+#
+# The ML stack (sentence-transformers, chromadb, google-genai) is imported
+# lazily at runtime, so the API and the test suite can run without it. Install
+# `requirements.txt` instead when you need real embeddings or Gemini calls.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.19
+aiofiles==24.1.0
+sqlalchemy[asyncio]==2.0.36
+aiosqlite==0.20.0
+PyJWT>=2.9.0,<3.0.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+numpy==2.2.1
+
+pytest==8.3.4
+pytest-asyncio>=0.26.0,<2.0.0
+httpx==0.28.1
