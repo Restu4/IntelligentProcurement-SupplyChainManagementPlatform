@@ -19,12 +19,18 @@
 
 Other list endpoints return a plain array of items.
 
+**Rate limiting:** every `/api` endpoint except `/api/health` is limited per
+client IP by an in-memory sliding window (default 120 requests / 60 seconds).
+`POST /api/login` has a stricter limit (default 10 / 60 seconds). Exceeding a
+limit returns `429 Too Many Requests` with a `Retry-After` header. Limits are
+per process; with multiple Uvicorn workers the effective limit is multiplied.
+
 ---
 
 ## 1. Authentication
 
 ### POST /api/login
-Authenticate and receive JWT token.
+Authenticate and receive an access token plus a rotating refresh token.
 
 **Request:**
 ```json
@@ -38,7 +44,38 @@ Authenticate and receive JWT token.
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "token_type": "bearer"
+  "refresh_token": "kM3...opaque...",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+```
+
+The refresh token is opaque (`secrets.token_urlsafe`), stored only as a SHA-256
+hash, and never accepted as a bearer token.
+
+### POST /api/refresh
+Exchange a refresh token for a new access/refresh pair. The old refresh token is
+revoked immediately. Reusing an already-revoked token is treated as theft and
+revokes every active refresh token for that user.
+
+**Request:**
+```json
+{
+  "refresh_token": "kM3...opaque..."
+}
+```
+
+**Response (200):** same shape as `/api/login`.
+
+`401` is returned for unknown, expired, or revoked tokens.
+
+### POST /api/logout
+Revoke a refresh token. Returns `204 No Content`.
+
+**Request:**
+```json
+{
+  "refresh_token": "kM3...opaque..."
 }
 ```
 
@@ -476,10 +513,87 @@ Get AI-powered supplier recommendation.
 
 ---
 
-## 8. Health
+## 8. Analytics and Reports
+
+Both endpoints aggregate live data in Python so SQLite and PostgreSQL return
+identical results. `fiscal_year` defaults to the current UTC year. "Spend" means
+the sum of purchase orders in `approved` or `completed` status; suppliers are
+not year-scoped.
+
+### GET /api/analytics/overview?fiscal_year=2026
+Return totals, monthly buckets, category spend, and a status breakdown.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response:**
+```json
+{
+  "fiscal_year": 2026,
+  "totals": {
+    "total_budget": 100000000,
+    "allocated": 40000000,
+    "remaining": 60000000,
+    "utilization": 40.0,
+    "spend": 30000000,
+    "pending_amount": 0,
+    "purchase_orders": 3,
+    "avg_order_value": 15000000,
+    "active_suppliers": 2,
+    "high_risk_suppliers": 1,
+    "documents": 5,
+    "pending_pos": 0,
+    "completed_pos": 1
+  },
+  "monthly": [
+    { "month": "Jan", "month_number": 1, "orders": 0, "spend": 0 },
+    { "month": "Nov", "month_number": 11, "orders": 3, "spend": 30000000 }
+  ],
+  "categories": [
+    { "category": "Raw Materials", "spend": 30000000, "share": 100.0 }
+  ],
+  "status_breakdown": [
+    { "status": "draft", "count": 1, "amount": 5000000 }
+  ],
+  "generated_at": "2026-11-11T08:00:00Z"
+}
+```
+
+`monthly` always contains 12 entries.
+
+### GET /api/reports/summary?fiscal_year=2026
+Return the same totals plus row-level data for CSV exports: department budgets,
+supplier performance, and the purchase-order register.
+
+**Response:** `{ fiscal_year, generated_at, totals, budgets[], suppliers[],
+purchase_orders[] }`. The frontend downloads these arrays as CSV; the API does
+not render PDF files.
+
+---
+
+## 9. Audit Logs
+
+### GET /api/audit-logs
+Append-only security and business audit trail. **Admin only.**
+
+**Query parameters:** `action`, `entity_type`, `user_id`, `limit` (1–200),
+`offset`.
+
+**Response (200):** page envelope of
+`{ id, user_id, username, action, entity_type, entity_id, detail, ip_address, created_at }`.
+
+Recorded actions include `login`, `login_failed`, `refresh_failed`,
+`refresh_reuse_detected`, `logout`, `register`, `purchase_order.created`,
+`purchase_order.updated`, `purchase_order.deleted`, `budget.created`,
+`budget.updated`, `budget.deleted`, `supplier.created`, `document.uploaded`, and
+`document.deleted`. `detail` is a JSON string with context; `username` is
+denormalised so the trail survives user deletion.
+
+---
+
+## 10. Health
 
 ### GET /api/health
-System health check.
+System health check (not rate limited).
 
 **Response:**
 ```json
@@ -488,13 +602,14 @@ System health check.
   "version": "1.0.0",
   "database": "connected",
   "chromadb": "connected",
-  "gemini": "configured"
+  "gemini": "configured",
+  "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 }
 ```
 
 ---
 
-## 9. Error Responses
+## 11. Error Responses
 
 ### 401 Unauthorized
 ```json
@@ -528,9 +643,20 @@ Used for duplicate resources and illegal state transitions:
 }
 ```
 
+### 429 Too Many Requests
+Returned by the rate-limit middleware and the stricter login limiter:
+
+```json
+{
+  "detail": "Too many requests. Please slow down."
+}
+```
+
+The response includes `Retry-After` (seconds).
+
 ---
 
-## 10. Swagger UI
+## 12. Swagger UI
 
 Interactive API documentation available at:
 - Swagger UI: `http://localhost:8000/docs`

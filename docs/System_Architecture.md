@@ -63,9 +63,9 @@ SmartProcure AI follows a **modern microservices-oriented architecture** with cl
 | Backend | FastAPI, Python 3.12 | REST API server |
 | Database | PostgreSQL 16 | Relational data |
 | Vector DB | ChromaDB | Vector embeddings |
-| Embeddings | Sentence Transformers (all-MiniLM-L6-v2) | Text embeddings |
+| Embeddings | Sentence Transformers (`paraphrase-multilingual-MiniLM-L12-v2`) | Text embeddings |
 | LLM | Google Gemini 2.0 Flash | Answer generation |
-| Auth | JWT (python-jose) + bcrypt | Authentication |
+| Auth | JWT (PyJWT) + bcrypt, rotating refresh tokens | Authentication and sessions |
 | File Parsing | PyMuPDF, pdfplumber, python-docx | Document extraction |
 | Forecasting | scikit-learn (Linear Regression) | Price prediction |
 

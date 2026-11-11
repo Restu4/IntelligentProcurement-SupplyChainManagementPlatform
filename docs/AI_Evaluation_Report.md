@@ -78,10 +78,15 @@ This report evaluates the performance of the SmartProcure AI RAG (Retrieval-Augm
 
 | Model | Dimension | Avg Similarity Score | Notes |
 |-------|-----------|---------------------|-------|
-| all-MiniLM-L6-v2 | 384 | 0.87 | Optimal for semantic search |
+| all-MiniLM-L6-v2 | 384 | 0.87 | English-centric; earlier default |
+| paraphrase-multilingual-MiniLM-L12-v2 | 384 | not measured | Current default; covers Indonesian and English |
 | Alternative: all-mpnet-base-v2 | 768 | 0.91 | Higher accuracy, 3x slower |
 
-**Decision:** `all-MiniLM-L6-v2` selected for production due to optimal speed/accuracy tradeoff.
+**Decision:** the multilingual MiniLM model is the default so Indonesian
+questions retrieve as well as English ones. The similarity figure above was not
+re-measured for this model; it shares the 384-dimension output but its vectors
+are not interchangeable with `all-MiniLM-L6-v2`, so the knowledge base must be
+re-indexed when switching (`python seed_knowledge_base.py`).
 
 ---
 

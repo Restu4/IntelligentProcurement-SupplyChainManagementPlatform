@@ -25,17 +25,19 @@ budgets through a web dashboard, a mobile app, and a REST API.
 
 | Module | Status | Notes |
 |:-------|:-------|:------|
-| Backend API | ✅ Working | Auth, chat (RAG), documents, suppliers, purchase orders, budgets, forecasts, health |
-| Web dashboard | ✅ Builds and runs | `next build` passes; login, chat, suppliers, documents, POs and budgets wired to the API |
+| Backend API | ✅ Working | Auth (access + refresh), chat (RAG), documents, suppliers, POs, budgets, forecasts, analytics, reports, audit log, health |
+| Web dashboard | ✅ Builds and runs | `next build` passes; every page now reads live API data |
 | Mobile app | 🟡 Implemented, needs SDK run | 5 tabs (Dashboard, Chat, Suppliers, Documents, Settings). Run `flutter analyze` locally |
 | Purchase Orders | ✅ Working | Full CRUD + PRC-POG-002 approval matrix, status workflow, amendment re-approval |
 | Budget module | ✅ Working | Full CRUD, per-year summary, utilization and remaining budget computed server-side |
-| Analytics / Reports pages | 🔴 Demo data | Static charts, not connected to the API |
-| Automated tests | ✅ Passing | 58 backend pytest tests (`backend/tests`) |
-| CI / Docker | ✅ Added | GitHub Actions (pytest + `next build` + compose validation) and multi-stage Dockerfiles |
+| Analytics / Reports | ✅ Working | Live aggregation endpoints + CSV exports; no demo data |
+| Security | ✅ Working | Rotating refresh tokens, per-IP rate limiting, append-only audit log |
+| Automated tests | ✅ Passing | 85 backend pytest tests (`backend/tests`) |
+| CI / Docker | ✅ Added | GitHub Actions (pytest + migration check + `next build` + compose validation) and multi-stage Dockerfiles |
 
-> The web app requires a running backend for live data. Analytics and reports
-> pages still fall back to clearly labelled demo data.
+> The web app requires a running backend for live data. All previously static
+> pages (dashboard, analytics, reports, forecast, knowledge base, AI assistant)
+> are now wired to the API.
 
 ---
 
@@ -50,6 +52,10 @@ budgets through a web dashboard, a mobile app, and a REST API.
   from `data/02_PRC-POG-002_PO_Guidelines.md`, status workflow, and admin-only edits
 - **Budget tracker** — live per-year department budgets with summary tiles,
   utilization bars, and create/edit/delete for administrators
+- **Analytics & reports** — live monthly spend, category and status breakdowns,
+  plus CSV exports of budgets, suppliers, and the PO register
+- **Audit viewer** — administrators can filter and page through the audit trail
+  from Settings
 
 ### Mobile App (Flutter, Material 3 dark theme)
 - **Dashboard** — live supplier/document counters and backend health
@@ -59,11 +65,15 @@ budgets through a web dashboard, a mobile app, and a REST API.
 - **Settings** — profile, API endpoint, session and sign-out
 
 ### Backend API (FastAPI)
-- **28 REST endpoints** — auth, chat, documents, suppliers, purchase orders, budgets, forecast, health
+- **33 REST endpoints** — auth, chat, documents, suppliers, purchase orders, budgets, forecast, analytics, reports, audit, health
 - **JWT auth** — PyJWT + bcrypt hashing and role-based access control (`admin` / `viewer`)
-- **RAG pipeline** — Sentence Transformers + ChromaDB (cosine) + Gemini 2.0 Flash via `google-genai`
+- **Refresh tokens** — opaque, SHA-256 hashed, rotated on every refresh; reuse detection revokes the whole token family
+- **Rate limiting** — per-IP sliding window (configurable) with a stricter limit on `/api/login`
+- **Audit log** — append-only trail of logins, failures, and all admin writes; exposed to admins only
+- **RAG pipeline** — Sentence Transformers (multilingual) + ChromaDB (cosine) + Gemini 2.0 Flash via `google-genai`
 - **Honest degradation** — if Gemini is unavailable the API returns cited knowledge-base excerpts with `degraded: true` instead of an error string
-- **9 database tables** — users, suppliers, budgets, documents, chunks, embeddings, chat history, forecasts, POs
+- **11 database tables** — users, suppliers, budgets, documents, chunks, embeddings, chat history, forecasts, POs, refresh tokens, audit logs
+- **Migrations** — Alembic baseline + Sprint 3 revision, verified drift-free against the ORM metadata
 - **Config safety** — fails fast in production on default secrets, wildcard CORS, or missing API keys
 
 ---
@@ -101,7 +111,7 @@ budgets through a web dashboard, a mobile app, and a REST API.
 | **Backend** | Python 3.12+, FastAPI, Uvicorn |
 | **Database** | SQLite (dev) / PostgreSQL 16 (prod), SQLAlchemy Async, Alembic |
 | **Vector Database** | ChromaDB |
-| **Embeddings** | Sentence Transformers (`all-MiniLM-L6-v2`, 384-dim) |
+| **Embeddings** | Sentence Transformers (`paraphrase-multilingual-MiniLM-L12-v2`, 384-dim) |
 | **LLM** | Google Gemini 2.0 Flash (`google-genai` SDK) |
 | **Authentication** | JWT (PyJWT), bcrypt (passlib) |
 | **File Processing** | PyMuPDF, pdfplumber, python-docx |
@@ -116,15 +126,15 @@ budgets through a web dashboard, a mobile app, and a REST API.
 ```
 ├── backend/
 │   ├── app/
-│   │   ├── api/                    # REST routers (auth, chat, documents, suppliers, purchase orders, budgets, forecast, health)
-│   │   ├── services/               # RAG, LLM, chunking, parsing, forecasting, PO domain rules
+│   │   ├── api/                    # REST routers (auth, chat, documents, suppliers, POs, budgets, forecast, analytics, audit, health)
+│   │   ├── services/               # RAG, LLM, chunking, parsing, forecasting, analytics, PO domain rules
 │   │   ├── database/               # SQLAlchemy async engine + ChromaDB client
 │   │   ├── models/                 # ORM models
 │   │   ├── schemas/                # Pydantic schemas (incl. shared Page envelope)
 │   │   ├── config/                 # Environment settings + runtime validation
-│   │   └── utils/                  # Auth helpers (JWT, RBAC) and logging
-│   ├── alembic/                    # Database migrations
-│   ├── tests/                      # pytest suite (58 tests)
+│   │   └── utils/                  # Auth (JWT, refresh tokens, RBAC), rate limiting, audit, logging
+│   ├── alembic/                    # Database migrations (001 baseline, 002 sprint 3)
+│   ├── tests/                      # pytest suite (85 tests)
 │   ├── main.py                     # App entry point (CORS, lifespan, routers)
 │   ├── seed.py                     # Idempotent demo users, suppliers, budgets, POs
 │   ├── seed_knowledge_base.py      # Chunk + embed data/ into ChromaDB
@@ -157,7 +167,7 @@ budgets through a web dashboard, a mobile app, and a REST API.
 ├── data/                           # 25 sample procurement documents
 ├── docs/                           # PRD, architecture, ERD, API, testing, user manual
 ├── experiments/legacy_prototype/   # Superseded first spike (not part of the app)
-├── .github/workflows/ci.yml        # Backend tests, frontend build, compose validation
+├── .github/workflows/ci.yml        # Backend tests + migration check, frontend build, compose validation
 ├── docker-compose.yml              # Backend + frontend (+ optional PostgreSQL profile)
 ├── backend/.env.example
 └── LICENSE.txt
@@ -190,6 +200,9 @@ cp .env.example .env
 #   python -c "import secrets; print(secrets.token_urlsafe(48))"
 # Then set JWT_SECRET_KEY and GEMINI_API_KEY in .env
 
+# Create/upgrade the schema. Alembic reads DATABASE_URL from .env.
+python -m alembic upgrade head
+
 python seed.py                  # demo users, suppliers, budgets, and POs (idempotent)
 python seed_knowledge_base.py   # chunk + embed data/*.md into ChromaDB
 
@@ -201,6 +214,28 @@ python main.py
 The seeder reads `../data` automatically; there is no need to copy files into
 `backend/knowledge_base/`. Running `seed.py` more than once is safe — records are
 matched by natural keys instead of being inserted twice.
+
+**Existing databases:** if you already created the schema through
+`Base.metadata.create_all` (the app does this on startup), adopt it once instead
+of replaying the baseline:
+
+```bash
+python -m alembic stamp head
+```
+
+After that, every schema change is applied with `python -m alembic upgrade head`.
+`python -m alembic check` reports whether the ORM models and the migrations have
+drifted apart.
+
+**Multilingual embeddings:** the default embedding model is
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`. It is **not**
+vector-compatible with the previous English-only `all-MiniLM-L6-v2` model, so
+documents indexed before this change must be re-indexed:
+
+```bash
+rm -rf vectordb            # or delete the CHROMA_PERSIST_DIR contents
+python seed_knowledge_base.py
+```
 
 To run only the API and the test suite without the ML stack, install the
 lightweight set instead:
@@ -278,17 +313,24 @@ drops privileges to the unprivileged `appuser`. The frontend image uses Next.js
 ```bash
 cd backend
 pip install -r requirements-dev.txt
-python -m pytest            # 58 tests
+python -m pytest            # 85 tests
+
+# Verify the migrations match the ORM and can run from scratch.
+export DATABASE_URL=sqlite+aiosqlite:///./_migration_check.db
+python -m alembic upgrade head
+python -m alembic check
+rm -f _migration_check.db
 ```
 
 The suite uses a temporary SQLite database, stubs the embedding model and
-ChromaDB, and covers auth/RBAC, suppliers, purchase orders (approval matrix and
-workflow), budgets, chat degradation, forecasts, document upload/delete, and
-configuration validation.
+ChromaDB, and covers auth/RBAC, refresh-token rotation and reuse detection, rate
+limiting, the audit log, suppliers, purchase orders (approval matrix and
+workflow), budgets, analytics/reports aggregation, chat degradation, forecasts,
+document upload/delete, and configuration validation.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push/PR:
 
-1. backend byte-compile + pytest,
+1. backend byte-compile + Alembic `upgrade head`/`check` + pytest,
 2. `npm ci && npm run build` for the frontend,
 3. `docker compose config -q` to validate the compose file.
 
@@ -318,7 +360,9 @@ array without a total count.
 
 | Method | Endpoint | Auth | Description |
 |:-------|:---------|:-----|:------------|
-| `POST` | `/api/login` | Public | Authenticate and receive a JWT |
+| `POST` | `/api/login` | Public | Authenticate; returns access + refresh tokens |
+| `POST` | `/api/refresh` | Public | Rotate a refresh token (reuse revokes the family) |
+| `POST` | `/api/logout` | Public | Revoke a refresh token |
 | `POST` | `/api/register` | Public | Register a viewer account |
 | `GET` | `/api/me` | User | Current user profile |
 | `POST` | `/api/chat` | User | Ask the RAG engine a question |
@@ -345,7 +389,15 @@ array without a total count.
 | `POST` | `/api/forecast` | User | Price, risk, budget, or demand forecast |
 | `GET` | `/api/forecast` | User | Forecast history (`limit`, `offset`, `supplier_id`) |
 | `GET` | `/api/forecast/smart-buy` | User | Ranked purchase recommendation |
-| `GET` | `/api/health` | Public | Database, ChromaDB, and Gemini status |
+| `GET` | `/api/analytics/overview` | User | Live totals, monthly spend, categories, status breakdown |
+| `GET` | `/api/reports/summary` | User | Row-level budgets, suppliers, and PO register for CSV export |
+| `GET` | `/api/audit-logs` | **Admin** | Paginated, filterable audit trail |
+| `GET` | `/api/health` | Public | Database, ChromaDB, Gemini, and embedding-model status |
+
+> All `/api` endpoints except `/api/health` are rate limited per client IP
+> (default 120 requests / 60 s; `/api/login` is stricter at 10 / 60 s) and return
+> `429` with `Retry-After` when exceeded. Limits are held in memory, so with
+> multiple workers the effective limit is multiplied by the worker count.
 
 ### Purchase-order approval matrix
 
@@ -389,6 +441,10 @@ sources
 ```
 
 Notes:
+- The embedding model is multilingual
+  (`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`), so Indonesian
+  and English questions share one vector space. Vectors from the old
+  English-only model are incompatible — re-index after upgrading.
 - Chunks are stored with explicit embeddings from the same model used at query
   time, so the vector space is consistent.
 - The confidence gate uses the strongest retrieved chunk; averaging all top-k
@@ -402,16 +458,25 @@ Notes:
 
 ## Known Limitations
 
-- Analytics and reports pages still render demo data (PO, budget, supplier,
-  document and chat views are live).
 - Supplier risk and smart-buy scoring are rule-based, not learned models.
-- The embedding model is English-centric; Indonesian queries may retrieve less
-  accurately. A multilingual model is on the roadmap.
-- No rate limiting, refresh tokens, or audit log yet.
+- Rate limiting is held in process memory. Running multiple workers multiplies
+  the effective limit, and a restart resets the counters. A shared store
+  (Redis) would be needed for a multi-instance deployment.
+- Refresh-token reuse detection revokes every token in the family, so a user
+  whose token was stolen must sign in again on all devices.
+- Audit logs are append-only at the application level; database-level
+  immutability (triggers, WORM storage) is not implemented.
+- CSV reports are generated in the browser from `/api/reports/summary`. There is
+  no server-side PDF rendering or scheduled report delivery.
+- Changing `EMBEDDING_MODEL_NAME` requires re-indexing the whole knowledge base;
+  there is no automatic vector migration.
 - Flutter code has not been run through `flutter analyze`/`flutter test` in this
   environment (no Flutter SDK); imports were checked manually.
 - The Docker backend image installs the full ML stack and is built on demand,
   not in CI.
+- The full runtime path with real `sentence-transformers`, ChromaDB, and Gemini
+  calls has not been exercised here; tests stub the ML stack and the API is
+  verified against SQLite.
 
 ---
 
