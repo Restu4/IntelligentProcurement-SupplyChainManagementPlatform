@@ -1,4 +1,4 @@
-from sqlalchemy import String, Float, Integer
+from sqlalchemy import String, Float, Integer, UniqueConstraint
 from sqlalchemy.orm import mapped_column, Mapped
 from app.database.postgres import Base
 from app.models.base import TimestampMixin
@@ -6,6 +6,9 @@ from app.models.base import TimestampMixin
 
 class Budget(Base, TimestampMixin):
     __tablename__ = "budgets"
+    __table_args__ = (
+        UniqueConstraint("department", "fiscal_year", name="uq_budget_department_year"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     department: Mapped[str] = mapped_column(String(255), nullable=False, index=True)

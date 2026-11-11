@@ -9,11 +9,15 @@ class PurchaseOrder(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     po_number: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
-    supplier_id: Mapped[int] = mapped_column(Integer, ForeignKey("suppliers.id"), nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    supplier_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("suppliers.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
     description: Mapped[str] = mapped_column(Text, nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)
     approval_level: Mapped[str] = mapped_column(String(50), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
