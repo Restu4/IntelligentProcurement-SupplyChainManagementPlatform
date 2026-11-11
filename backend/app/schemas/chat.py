@@ -16,6 +16,8 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceEvidence]
     confidence: float
+    # True when the LLM was unavailable and the answer is an extractive fallback.
+    degraded: bool = False
 
 
 class HistoryResponse(BaseModel):

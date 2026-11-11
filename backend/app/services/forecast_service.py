@@ -1,3 +1,4 @@
+import asyncio
 import json
 import numpy as np
 from typing import Optional
@@ -11,6 +12,16 @@ class ForecastService:
 
     @staticmethod
     async def forecast_price(
+        historical_prices: list[float],
+        periods: int = 3,
+    ) -> dict:
+        # scikit-learn is CPU-bound; run it off the event loop.
+        return await asyncio.to_thread(
+            ForecastService._forecast_price_sync, historical_prices, periods
+        )
+
+    @staticmethod
+    def _forecast_price_sync(
         historical_prices: list[float],
         periods: int = 3,
     ) -> dict:

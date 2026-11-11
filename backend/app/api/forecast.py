@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 import json
@@ -99,14 +99,19 @@ async def create_forecast(
 
 @router.get("/forecast", response_model=list[ForecastHistoryResponse])
 async def get_forecast_history(
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    supplier_id: int | None = Query(None, gt=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    query = select(ForecastHistory)
+    if supplier_id:
+        query = query.where(ForecastHistory.supplier_id == supplier_id)
     result = await db.execute(
-        select(ForecastHistory)
-        .order_by(desc(ForecastHistory.created_at))
+        query.order_by(desc(ForecastHistory.created_at), desc(ForecastHistory.id))
         .limit(limit)
+        .offset(offset)
     )
     records = result.scalars().all()
     return [

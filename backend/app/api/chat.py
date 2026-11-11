@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 import json
@@ -25,39 +25,52 @@ async def chat(
 ):
     try:
         result = await rag_service.answer(body.question)
-
-        chat_entry = ChatHistory(
-            user_id=current_user.id,
-            question=body.question,
-            answer=result["answer"],
-            confidence=result["confidence"],
-            sources_json=json.dumps(result["sources"], ensure_ascii=False),
+    except Exception:
+        # Never leak internal exception text to the client as an "answer".
+        logger.exception("Chat processing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="The AI assistant is temporarily unavailable. Please try again.",
         )
-        db.add(chat_entry)
+
+    try:
+        db.add(
+            ChatHistory(
+                user_id=current_user.id,
+                question=body.question,
+                answer=result["answer"],
+                confidence=result["confidence"],
+                sources_json=json.dumps(result["sources"], ensure_ascii=False),
+            )
+        )
         await db.flush()
+    except Exception:
+        # A failed history write must not discard a valid answer.
+        await db.rollback()
+        logger.warning("Could not persist chat history", exc_info=True)
 
-        return ChatResponse(
-            question=result["question"],
-            answer=result["answer"],
-            sources=result["sources"],
-            confidence=result["confidence"],
-        )
-    except Exception as e:
-        logger.error(f"Chat error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+    return ChatResponse(
+        question=result["question"],
+        answer=result["answer"],
+        sources=result["sources"],
+        confidence=result["confidence"],
+        degraded=result.get("degraded", False),
+    )
 
 
 @router.get("/history", response_model=list[HistoryResponse])
 async def get_history(
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(ChatHistory)
         .where(ChatHistory.user_id == current_user.id)
-        .order_by(desc(ChatHistory.created_at))
+        .order_by(desc(ChatHistory.created_at), desc(ChatHistory.id))
         .limit(limit)
+        .offset(offset)
     )
     records = result.scalars().all()
     return [

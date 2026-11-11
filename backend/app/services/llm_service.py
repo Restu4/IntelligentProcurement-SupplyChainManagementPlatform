@@ -1,19 +1,29 @@
-import google.generativeai as genai
-from typing import List, Optional
+from typing import List
 
 from app.config.settings import settings
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-_genai_configured = False
+_client = None
 
 
-def _ensure_configured():
-    global _genai_configured
-    if not _genai_configured and settings.GEMINI_API_KEY:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        _genai_configured = True
+class LLMError(RuntimeError):
+    """Raised when the LLM cannot produce an answer."""
+
+
+class LLMUnavailableError(LLMError):
+    """Raised when no API key is configured."""
+
+
+def _get_client():
+    """Create the google-genai client lazily so imports stay cheap."""
+    global _client
+    if _client is None:
+        from google import genai
+
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    return _client
 
 
 class LLMService:
@@ -27,28 +37,37 @@ class LLMService:
     @staticmethod
     async def generate(
         prompt: str,
-        model_name: str = DEFAULT_MODEL,
+        model_name: str | None = None,
         temperature: float = 0.3,
         max_output_tokens: int = 1024,
     ) -> str:
-        _ensure_configured()
+        """Call Gemini asynchronously.
+
+        Raises ``LLMUnavailableError``/``LLMError`` instead of returning an
+        error message as if it were a real answer.
+        """
         if not settings.GEMINI_API_KEY:
-            logger.warning("Gemini API key not configured")
-            return "Gemini API is not configured. Please set GEMINI_API_KEY in .env"
+            raise LLMUnavailableError("GEMINI_API_KEY is not configured")
 
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
+            from google.genai import types
+
+            response = await _get_client().aio.models.generate_content(
+                model=model_name or settings.GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     temperature=temperature,
                     max_output_tokens=max_output_tokens,
                 ),
             )
-            return response.text
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            return f"An error occurred while contacting Gemini API: {str(e)}"
+        except Exception as exc:  # network, quota, invalid key, SDK errors
+            logger.error(f"Gemini API error: {exc}", exc_info=True)
+            raise LLMError("Gemini request failed") from exc
+
+        text = (getattr(response, "text", None) or "").strip()
+        if not text:
+            raise LLMError("Gemini returned an empty response")
+        return text
 
     @staticmethod
     def build_rag_prompt(

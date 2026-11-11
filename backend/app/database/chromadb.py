@@ -1,13 +1,15 @@
-import chromadb
-from chromadb.config import Settings as ChromaSettings
 from app.config.settings import settings
 
 _chroma_client = None
 
 
 def get_chroma_client():
+    """Return a process-wide Chroma client, importing chromadb lazily."""
     global _chroma_client
     if _chroma_client is None:
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+
         _chroma_client = chromadb.PersistentClient(
             path=settings.CHROMA_PERSIST_DIR,
             settings=ChromaSettings(

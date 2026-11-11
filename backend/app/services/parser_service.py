@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -30,29 +31,37 @@ class ParserService:
 
     @staticmethod
     async def extract_text(file: BinaryIO, filename: str) -> str:
+        """Extract text without blocking the event loop.
+
+        PDF/DOCX libraries are synchronous and CPU-heavy, so the work runs in a
+        worker thread.
+        """
+        data = file.read()
         ext = Path(filename).suffix.lower()
         if ext in (".txt", ".md"):
-            return await ParserService._extract_txt(file)
+            text = await asyncio.to_thread(ParserService._extract_txt, data)
         elif ext == ".pdf":
-            return await ParserService._extract_pdf(file)
+            text = await asyncio.to_thread(ParserService._extract_pdf, data)
         elif ext == ".docx":
-            return await ParserService._extract_docx(file)
+            text = await asyncio.to_thread(ParserService._extract_docx, data)
         else:
             raise ValueError(f"Unsupported file type: {ext}")
 
-    @staticmethod
-    async def _extract_txt(file: BinaryIO) -> str:
-        content = file.read().decode("utf-8", errors="replace")
-        logger.info(f"Extracted {len(content)} chars from TXT")
-        return content
+        logger.info(f"Extracted {len(text)} chars from {ext}")
+        return text
 
     @staticmethod
-    async def _extract_pdf(file: BinaryIO) -> str:
+    def _extract_txt(data: bytes) -> str:
+        return data.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _extract_pdf(data: bytes) -> str:
         text = ""
         try:
             import pdfplumber
+
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(file.read())
+                tmp.write(data)
                 tmp_path = tmp.name
             try:
                 with pdfplumber.open(tmp_path) as pdf:
@@ -62,38 +71,40 @@ class ParserService:
                             text += page_text + "\n"
             finally:
                 os.unlink(tmp_path)
+            return text
         except ImportError:
-            logger.warning("pdfplumber not available, falling back to PyMuPDF")
-            try:
-                import fitz
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(file.read())
-                    tmp_path = tmp.name
-                try:
-                    doc = fitz.open(tmp_path)
-                    for page in doc:
-                        text += page.get_text()
-                    doc.close()
-                finally:
-                    os.unlink(tmp_path)
-            except ImportError:
-                raise ImportError("No PDF library available. Install pdfplumber or PyMuPDF.")
-        logger.info(f"Extracted {len(text)} chars from PDF")
+            pass
+
+        logger.warning("pdfplumber not available, falling back to PyMuPDF")
+        try:
+            import fitz
+        except ImportError:
+            raise ImportError("No PDF library available. Install pdfplumber or PyMuPDF.")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        try:
+            doc = fitz.open(tmp_path)
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+        finally:
+            os.unlink(tmp_path)
         return text
 
     @staticmethod
-    async def _extract_docx(file: BinaryIO) -> str:
+    def _extract_docx(data: bytes) -> str:
         try:
             import docx
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(file.read())
-                tmp_path = tmp.name
-            try:
-                doc = docx.Document(tmp_path)
-                text = "\n".join(p.text for p in doc.paragraphs)
-            finally:
-                os.unlink(tmp_path)
         except ImportError:
             raise ImportError("python-docx is required to parse .docx files.")
-        logger.info(f"Extracted {len(text)} chars from DOCX")
-        return text
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        try:
+            document = docx.Document(tmp_path)
+            return "\n".join(p.text for p in document.paragraphs)
+        finally:
+            os.unlink(tmp_path)

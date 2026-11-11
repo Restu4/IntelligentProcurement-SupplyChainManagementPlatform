@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter
 
 from app.config.settings import settings
@@ -24,7 +26,7 @@ async def health_check():
     chroma_status = "disconnected"
     try:
         client = get_chroma_client()
-        client.heartbeat()
+        await asyncio.to_thread(client.heartbeat)
         chroma_status = "connected"
     except Exception:
         chroma_status = "disconnected"

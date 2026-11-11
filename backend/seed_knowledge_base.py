@@ -69,10 +69,14 @@ def seed():
             })
 
         if chunk_ids:
-            collection.add(
+            # Explicit embeddings keep the index aligned with the query model,
+            # and upsert makes re-seeding idempotent.
+            embeddings = embedder.embed_batch(chunk_texts)
+            collection.upsert(
                 ids=chunk_ids,
                 documents=chunk_texts,
                 metadatas=chunk_metadatas,
+                embeddings=embeddings,
             )
             total_chunks += len(chunks)
             logger.info(f"Seeded {file_path.name}: {len(chunks)} chunks")

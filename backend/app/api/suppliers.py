@@ -8,16 +8,19 @@ from app.models.user import User
 from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierResponse, SupplierCreate
 from app.services.forecast_service import ForecastService
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api", tags=["Suppliers"])
 
 
 @router.get("/suppliers", response_model=list[SupplierResponse])
 async def list_suppliers(
-    status: Optional[str] = Query(None),
-    risk_level: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
+    status: Optional[str] = Query(None, max_length=50),
+    risk_level: Optional[str] = Query(None, max_length=50),
+    category: Optional[str] = Query(None, max_length=100),
+    q: Optional[str] = Query(None, max_length=200),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -28,7 +31,14 @@ async def list_suppliers(
         query = query.where(Supplier.risk_level == risk_level)
     if category:
         query = query.where(Supplier.category == category)
-    query = query.order_by(desc(Supplier.created_at))
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.where(Supplier.name.ilike(term))
+    query = (
+        query.order_by(desc(Supplier.created_at), desc(Supplier.id))
+        .limit(limit)
+        .offset(offset)
+    )
 
     result = await db.execute(query)
     return result.scalars().all()
@@ -51,7 +61,7 @@ async def get_supplier(
 async def create_supplier(
     body: SupplierCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     supplier = Supplier(**body.model_dump())
     db.add(supplier)
