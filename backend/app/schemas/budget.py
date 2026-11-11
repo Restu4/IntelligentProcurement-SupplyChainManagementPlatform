@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.schemas.common import UtcDatetime
 
 
 class BudgetCreate(BaseModel):
@@ -27,8 +27,8 @@ class BudgetResponse(BaseModel):
     utilization: float = Field(
         description="Allocated divided by total budget, as a percentage."
     )
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
     class Config:
         from_attributes = True

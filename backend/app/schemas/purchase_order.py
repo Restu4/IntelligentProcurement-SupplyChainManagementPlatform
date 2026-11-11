@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.common import UtcDatetime
 
 POStatus = Literal[
     "draft",
@@ -59,8 +60,8 @@ class PurchaseOrderResponse(BaseModel):
     status: str
     approval_level: str | None
     notes: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
     class Config:
         from_attributes = True

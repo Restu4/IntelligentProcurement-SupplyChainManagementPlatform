@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel
+
+from app.schemas.common import UtcDatetime
 
 
 class AuditLogResponse(BaseModel):
@@ -12,7 +12,7 @@ class AuditLogResponse(BaseModel):
     entity_id: str | None
     detail: str | None
     ip_address: str | None
-    created_at: datetime
+    created_at: UtcDatetime
 
     class Config:
         from_attributes = True

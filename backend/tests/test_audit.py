@@ -29,6 +29,7 @@ async def test_login_is_audited(client):
     assert len(items) == 1
     assert items[0]["username"] == "admin"
     assert items[0]["entity_type"] == "auth"
+    assert items[0]["created_at"].endswith("Z")
 
 
 async def test_failed_login_is_audited_without_a_session(client):

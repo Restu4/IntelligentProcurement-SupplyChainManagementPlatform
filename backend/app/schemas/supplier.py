@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+
+from app.schemas.common import UtcDatetime
 
 
 class SupplierResponse(BaseModel):
@@ -15,7 +16,7 @@ class SupplierResponse(BaseModel):
     delivery_score: float | None
     quality_score: float | None
     evaluation_notes: str | None
-    created_at: datetime
+    created_at: UtcDatetime
 
     class Config:
         from_attributes = True

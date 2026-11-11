@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.schemas.common import UtcDatetime
 
 
 class AnalyticsTotals(BaseModel):
@@ -46,7 +46,7 @@ class AnalyticsOverview(BaseModel):
     monthly: list[MonthlyPoint]
     categories: list[CategorySpend]
     status_breakdown: list[StatusBreakdown]
-    generated_at: datetime
+    generated_at: UtcDatetime
 
 
 class ReportBudgetRow(BaseModel):
@@ -73,12 +73,12 @@ class ReportPurchaseOrderRow(BaseModel):
     amount: float
     status: str
     approval_level: str | None
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class ReportSummary(BaseModel):
     fiscal_year: int
-    generated_at: datetime
+    generated_at: UtcDatetime
     totals: AnalyticsTotals
     budgets: list[ReportBudgetRow]
     suppliers: list[ReportSupplierRow]

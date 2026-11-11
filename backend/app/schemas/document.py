@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+
+from app.schemas.common import UtcDatetime
 
 
 class DocumentResponse(BaseModel):
@@ -10,7 +11,7 @@ class DocumentResponse(BaseModel):
     file_size: int
     description: str | None
     chunk_count: int
-    created_at: datetime
+    created_at: UtcDatetime
 
     class Config:
         from_attributes = True

@@ -133,6 +133,9 @@ async def test_report_summary_lists_all_rows(client, admin_headers):
     assert len(body["purchase_orders"]) == 3
     assert all(row["po_number"] for row in body["purchase_orders"])
     assert all(row["supplier_name"] for row in body["purchase_orders"])
+    # SQLite drops tzinfo; the API must still emit an explicit UTC designator.
+    assert body["generated_at"].endswith("Z")
+    assert body["purchase_orders"][0]["created_at"].endswith("Z")
 
 
 async def test_fiscal_year_filter_excludes_other_years(client, admin_headers):
