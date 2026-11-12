@@ -1,14 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { ThemeProvider } from "./theme-provider";
+import { tokenStore } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+
+  // Tokens live in localStorage, so this guard runs on the client. Without it a
+  // signed-out visitor would render the dashboard shell and fire a burst of
+  // unauthenticated API requests.
+  useEffect(() => {
+    if (tokenStore.get() || tokenStore.getRefresh()) {
+      setSessionChecked(true);
+    } else {
+      router.replace("/login");
+    }
+  }, [router]);
+
+  if (!sessionChecked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-primary-950">
+        <p className="text-sm text-gray-500 dark:text-gray-400">Checking your session…</p>
+      </div>
+    );
+  }
 
   return (
     <ThemeProvider>

@@ -24,7 +24,9 @@ async def test_login_rejects_wrong_password(client):
 
 async def test_me_requires_token(client):
     response = await client.get("/api/me")
-    assert response.status_code in (401, 403)
+    # 401 (not 403) is what tells the web client to refresh or sign in again.
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 async def test_me_returns_profile(client, admin_headers):

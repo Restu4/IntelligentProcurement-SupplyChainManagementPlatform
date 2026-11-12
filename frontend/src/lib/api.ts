@@ -433,6 +433,13 @@ interface RequestOptions {
  */
 let refreshInFlight: Promise<string | null> | null = null;
 
+/** Send the user back to the login page after a session can no longer be renewed. */
+function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === "/login") return;
+  window.location.assign("/login");
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const refreshToken = tokenStore.getRefresh();
@@ -484,6 +491,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (token) finalHeaders.Authorization = `Bearer ${token}`;
   }
 
+  if (auth && !finalHeaders.Authorization && !tokenStore.getRefresh()) {
+    // No session at all, so there is nothing to refresh: skip the round-trip
+    // that would only come back 401 and send the visitor straight to login.
+    redirectToLogin();
+    throw new ApiError("Please sign in to continue.", 401);
+  }
+
   const send = async (): Promise<Response> => {
     try {
       return await fetch(`${API_BASE_URL}${path}`, {
@@ -512,6 +526,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       response = await send();
     } else {
       tokenStore.clear();
+      redirectToLogin();
     }
   }
 

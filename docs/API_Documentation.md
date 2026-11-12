@@ -618,6 +618,11 @@ System health check (not rate limited).
 }
 ```
 
+Protected endpoints answer `401` (with a `WWW-Authenticate: Bearer` header) when the
+`Authorization` header is missing, malformed, expired or signed with another
+secret. `403` is reserved for a valid session that lacks the required role, so a
+client can tell "sign in again" apart from "you are not allowed to do this".
+
 ### 404 Not Found
 ```json
 {

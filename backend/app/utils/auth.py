@@ -16,7 +16,9 @@ from app.database.postgres import get_db
 from app.models.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+# auto_error=False so a missing header becomes 401 (not Starlette's 403). Clients
+# need 401 to know they should refresh or redirect to the login page.
+security = HTTPBearer(auto_error=False)
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_BYTES = 48
@@ -75,16 +77,19 @@ def decode_access_token(token: str) -> dict:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    if credentials is None or not credentials.credentials:
+        raise credentials_exception
+
+    token = credentials.credentials
     try:
         payload = decode_access_token(token)
         subject = payload.get("sub")

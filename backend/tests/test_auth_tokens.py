@@ -108,6 +108,13 @@ async def test_refresh_token_is_not_accepted_as_access_token(client):
     assert response.status_code == 401
 
 
+async def test_invalid_access_token_returns_401(client):
+    response = await client.get(
+        "/api/me", headers={"Authorization": "Bearer not-a-real-token"}
+    )
+    assert response.status_code == 401
+
+
 async def test_refresh_token_is_stored_hashed(client):
     tokens = await _login(client)
     async with async_session_factory() as db:
